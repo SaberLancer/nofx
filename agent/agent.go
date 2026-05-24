@@ -343,6 +343,7 @@ func resolveModelRuntimeConfig(provider, customAPIURL, customModelName, fallback
 		"kimi":     {url: "https://api.moonshot.ai/v1", model: "moonshot-v1-auto"},
 		"minimax":  {url: "https://api.minimax.chat/v1", model: "MiniMax-M2.5"},
 		"claw402":  {url: "https://claw402.ai", model: "deepseek"},
+		"ollama":   {url: ollamaRuntimeBaseURL(), model: ollamaRuntimeModel()},
 	}
 
 	if customAPIURL == "" {
@@ -359,6 +360,20 @@ func resolveModelRuntimeConfig(provider, customAPIURL, customModelName, fallback
 		customModelName = fallbackModelID
 	}
 	return customAPIURL, customModelName
+}
+
+func ollamaRuntimeBaseURL() string {
+	if v := strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL")); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return "http://localhost:11434/v1"
+}
+
+func ollamaRuntimeModel() string {
+	if v := strings.TrimSpace(os.Getenv("OLLAMA_MODEL")); v != "" {
+		return v
+	}
+	return "llama3.1"
 }
 
 func (a *Agent) Start() {

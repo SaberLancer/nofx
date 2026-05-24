@@ -192,9 +192,19 @@ func (s *Server) handleUpdateModelConfigs(c *gin.Context) {
 		// SSRF protection: validate custom_api_url before storing
 		if modelData.CustomAPIURL != "" {
 			cleanURL := strings.TrimSuffix(modelData.CustomAPIURL, "#")
-			if err := security.ValidateURL(cleanURL); err != nil {
+			var err error
+			if strings.EqualFold(modelID, "ollama") {
+				err = security.ValidateLocalServiceURL(cleanURL)
+			} else {
+				err = security.ValidateURL(cleanURL)
+			}
+			if err != nil {
 				logger.Warnf("Invalid custom_api_url for model %s: %v", modelID, err)
-				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid custom_api_url for model %s: URL must be a valid HTTPS endpoint", modelID)})
+				if strings.EqualFold(modelID, "ollama") {
+					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid custom_api_url for model %s: URL must be a valid http(s) endpoint (localhost allowed for Ollama)", modelID)})
+				} else {
+					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid custom_api_url for model %s: URL must be a valid HTTPS endpoint", modelID)})
+				}
 				return
 			}
 		}
@@ -244,6 +254,7 @@ func (s *Server) handleGetSupportedModels(c *gin.Context) {
 		{"id": "blockrun-base", "name": "BlockRun (Base Wallet)", "provider": "blockrun-base", "defaultModel": "auto"},
 		{"id": "blockrun-sol", "name": "BlockRun (Solana Wallet)", "provider": "blockrun-sol", "defaultModel": "auto"},
 		{"id": "claw402", "name": "Claw402 (Base USDC)", "provider": "claw402", "defaultModel": "deepseek-v4-flash"},
+		{"id": "ollama", "name": "Ollama (Local)", "provider": "ollama", "defaultModel": "llama3.1"},
 	}
 
 	c.JSON(http.StatusOK, supportedModels)

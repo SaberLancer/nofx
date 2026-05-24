@@ -23,7 +23,7 @@ var (
 	genericAPIKeyPattern   = regexp.MustCompile(`^[A-Za-z0-9_\-]{8,}$`)
 	hexCredentialPattern   = regexp.MustCompile(`^(0x)?[A-Fa-f0-9]{16,}$`)
 	supportedModelProvider = map[string]struct{}{
-		"openai": {}, "deepseek": {}, "claude": {}, "gemini": {}, "qwen": {}, "kimi": {}, "grok": {}, "minimax": {}, "claw402": {}, "blockrun-base": {}, "blockrun-sol": {},
+		"openai": {}, "deepseek": {}, "claude": {}, "gemini": {}, "qwen": {}, "kimi": {}, "grok": {}, "minimax": {}, "ollama": {}, "claw402": {}, "blockrun-base": {}, "blockrun-sol": {},
 	}
 )
 
@@ -53,7 +53,14 @@ func (v modelConfigValidator) Validate() error {
 		return fmt.Errorf("unsupported provider: %s", provider)
 	}
 	if trimmed := strings.TrimSpace(v.customAPIURL); trimmed != "" {
-		if err := security.ValidateURL(strings.TrimSuffix(trimmed, "#")); err != nil {
+		cleanURL := strings.TrimSuffix(trimmed, "#")
+		var err error
+		if provider == "ollama" {
+			err = security.ValidateLocalServiceURL(cleanURL)
+		} else {
+			err = security.ValidateURL(cleanURL)
+		}
+		if err != nil {
 			return fmt.Errorf("invalid custom_api_url: %w", err)
 		}
 	}

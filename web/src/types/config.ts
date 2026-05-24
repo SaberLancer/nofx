@@ -3,6 +3,7 @@ export interface AIModel {
   name: string
   provider: string
   enabled: boolean
+  defaultModel?: string
   has_api_key?: boolean
   apiKey?: string
   customApiUrl?: string

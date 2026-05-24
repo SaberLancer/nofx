@@ -28,6 +28,7 @@ func supportedModelProviders() []modelProviderSpec {
 		{ID: "grok", DisplayName: "Grok (xAI)", DefaultModel: "grok-3-latest", CredentialLabelZH: "API Key", CredentialLabelEN: "API key", SupportsCustomAPIURL: true, SupportsCustomModel: true},
 		{ID: "kimi", DisplayName: "Kimi (Moonshot)", DefaultModel: "moonshot-v1-auto", CredentialLabelZH: "API Key", CredentialLabelEN: "API key", SupportsCustomAPIURL: true, SupportsCustomModel: true},
 		{ID: "minimax", DisplayName: "MiniMax", DefaultModel: "MiniMax-M2.5", CredentialLabelZH: "API Key", CredentialLabelEN: "API key", SupportsCustomAPIURL: true, SupportsCustomModel: true},
+		{ID: "ollama", DisplayName: "Ollama (Local)", DefaultModel: "llama3.1", CredentialLabelZH: "API Key（可填 ollama）", CredentialLabelEN: "API key (ollama placeholder ok)", SupportsCustomAPIURL: true, SupportsCustomModel: true},
 		{
 			ID:                    "claw402",
 			DisplayName:           "Claw402 (Base USDC)",

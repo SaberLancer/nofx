@@ -11,7 +11,6 @@ import {
   BLOCKRUN_MODELS,
   CLAW402_MODELS,
   AI_PROVIDER_CONFIG,
-  DEFAULT_CLAW402_MODEL,
   getShortName,
 } from './model-constants'
 
@@ -61,6 +60,12 @@ export function ModelConfigModal({
 
   const handleSelectModel = (modelId: string) => {
     setSelectedModelId(modelId)
+    const model = (allModels || []).find((m) => m.id === modelId)
+    if (model?.provider === 'ollama') {
+      setApiKey('ollama')
+      setBaseUrl('http://localhost:11434/v1')
+      setModelName(model.defaultModel || 'llama3.1')
+    }
     setCurrentStep(1)
   }
 
@@ -75,8 +80,18 @@ export function ModelConfigModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedModelId || !apiKey.trim()) return
-    onSave(selectedModelId, apiKey.trim(), baseUrl.trim() || undefined, modelName.trim() || undefined)
+    const model =
+      allModels?.find((m) => m.id === selectedModelId) ||
+      configuredModels?.find((m) => m.id === selectedModelId)
+    const isOllama = model?.provider === 'ollama'
+    const effectiveApiKey = apiKey.trim() || (isOllama ? 'ollama' : '')
+    if (!selectedModelId || !effectiveApiKey) return
+    onSave(
+      selectedModelId,
+      effectiveApiKey,
+      baseUrl.trim() || undefined,
+      modelName.trim() || undefined
+    )
   }
 
   const availableModels = allModels || []
@@ -1098,6 +1113,43 @@ function StandardProviderConfigForm({
         )}
       </div>
 
+      {/* Ollama local setup hint */}
+      {selectedModel.provider === 'ollama' && (
+        <div
+          className="p-4 rounded-xl"
+          style={{
+            background: 'rgba(96, 165, 250, 0.08)',
+            border: '1px solid rgba(96, 165, 250, 0.25)',
+          }}
+        >
+          <div className="text-sm font-semibold mb-2" style={{ color: '#60A5FA' }}>
+            {language === 'zh' ? '本地 Ollama 配置' : 'Local Ollama Setup'}
+          </div>
+          <div className="text-xs space-y-1" style={{ color: '#848E9C' }}>
+            <div>
+              {language === 'zh'
+                ? '1. 先在本机运行：ollama serve'
+                : '1. Run locally: ollama serve'}
+            </div>
+            <div>
+              {language === 'zh'
+                ? '2. 拉取模型：ollama pull llama3.1（或你填写的模型名）'
+                : '2. Pull model: ollama pull llama3.1 (or your model name)'}
+            </div>
+            <div>
+              {language === 'zh'
+                ? '3. Base URL 默认 http://localhost:11434/v1'
+                : '3. Default Base URL: http://localhost:11434/v1'}
+            </div>
+            <div>
+              {language === 'zh'
+                ? '4. API Key 可填 ollama（占位即可）'
+                : '4. API Key can be ollama (placeholder)'}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Kimi Warning */}
       {selectedModel.provider === 'kimi' && (
         <div
@@ -1288,7 +1340,10 @@ function StandardProviderConfigForm({
         </button>
         <button
           type="submit"
-          disabled={!selectedModel || !apiKey.trim()}
+          disabled={
+            !selectedModel ||
+            (!apiKey.trim() && selectedModel.provider !== 'ollama')
+          }
           className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ background: '#8B5CF6', color: '#fff' }}
         >

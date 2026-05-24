@@ -15,6 +15,7 @@ const MODEL_COLORS: Record<string, string> = {
   openai: '#10A37F',
   minimax: '#E45735',
   claw402: '#7C3AED',
+  ollama: '#FFFFFF',
 }
 
 // 获取AI模型图标的函数
@@ -52,6 +53,26 @@ export const getModelIcon = (modelType: string, props: IconProps = {}) => {
     case 'claw402':
       iconPath = '/icons/claw402.png'
       break
+    case 'ollama':
+      return (
+        <span
+          className={props.className}
+          style={{
+            width: props.width || 24,
+            height: props.height || 24,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: (props.width || 24) * 0.55,
+            fontWeight: 700,
+            color: '#EAECEF',
+            background: '#1E2329',
+            borderRadius: 6,
+          }}
+        >
+          Ol
+        </span>
+      )
     default:
       return null
   }

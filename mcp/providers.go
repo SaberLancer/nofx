@@ -12,6 +12,7 @@ const (
 	ProviderGrok     = "grok"
 	ProviderKimi     = "kimi"
 	ProviderMiniMax  = "minimax"
+	ProviderOllama   = "ollama"
 
 	ProviderClaw402 = "claw402"
 

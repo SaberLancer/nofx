@@ -1151,6 +1151,10 @@ func safeModelForTool(model *store.AIModel) safeModelToolConfig {
 }
 
 func modelConfigUsable(provider, modelID, apiKey, customAPIURL, customModelName string) bool {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "ollama" && strings.TrimSpace(apiKey) == "" {
+		apiKey = "ollama"
+	}
 	if strings.TrimSpace(apiKey) == "" {
 		return false
 	}
