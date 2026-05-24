@@ -228,8 +228,8 @@ func (t *OKXTrader) doRequest(method, path string, body interface{}) ([]byte, er
 	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
 	req.Header.Set("OK-ACCESS-PASSPHRASE", t.passphrase)
 	req.Header.Set("Content-Type", "application/json")
-	// Set request header
-	req.Header.Set("x-simulated-trading", "0")
+	// Set request header，0 means real trading, 1 means simulated trading
+	req.Header.Set("x-simulated-trading", "1")
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
