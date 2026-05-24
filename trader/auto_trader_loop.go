@@ -94,6 +94,25 @@ func (at *AutoTrader) runCycle() error {
 	at.logInfof("📊 Account equity: %.2f USDT | Available: %.2f USDT | Positions: %d",
 		ctx.Account.TotalEquity, ctx.Account.AvailableBalance, ctx.Account.PositionCount)
 
+	// 4.5 Pre-decision gate: skip AI when no directional tick trend is detected
+	if gate, reason := at.shouldGateAIByPreDecision(ctx); gate {
+		at.logInfof("⏭ %s", reason)
+		record.Success = true
+		record.ExecutionLog = append(record.ExecutionLog, reason)
+		record.AccountState = store.AccountSnapshot{
+			TotalBalance:          ctx.Account.TotalEquity,
+			AvailableBalance:      ctx.Account.AvailableBalance,
+			TotalUnrealizedProfit: ctx.Account.UnrealizedPnL,
+			PositionCount:         ctx.Account.PositionCount,
+			InitialBalance:        at.initialBalance,
+		}
+		at.saveDecision(record)
+		return nil
+	} else if reason != "" {
+		at.logInfof("✅ %s", reason)
+		record.ExecutionLog = append(record.ExecutionLog, reason)
+	}
+
 	// 5. Use strategy engine to call AI for decision
 	at.logInfof("🤖 Requesting AI analysis and decision... [Strategy Engine]")
 	aiDecision, err := kernel.GetFullDecisionWithStrategy(ctx, at.mcpClient, at.strategyEngine, "balanced")

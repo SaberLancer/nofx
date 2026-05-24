@@ -169,6 +169,48 @@ export const riskControl = {
 };
 
 // ============================================================================
+// PRE-DECISION TRANSLATIONS
+// ============================================================================
+export const preDecision = {
+  title: { zh: '前置决策', en: 'Pre-Decision', es: 'Pre-Decisión' },
+  desc: {
+    zh: '基于 TICK 原始成交实时跟踪趋势，仅在有明确方向信号时才触发 AI 分析，节省 Token',
+    en: 'Track tick-level trades in real time and trigger AI analysis only when a directional signal appears',
+    es: 'Seguimiento TICK en tiempo real; activa AI solo con señal direccional',
+  },
+  enabled: { zh: '启用前置决策', en: 'Enable Pre-Decision Gate', es: 'Habilitar Pre-Decisión' },
+  enabledDesc: {
+    zh: '关闭后每个扫描周期都会调用 AI（与原先行为一致）',
+    en: 'When disabled, AI runs every scan cycle (legacy behavior)',
+    es: 'Si está desactivado, AI corre en cada ciclo',
+  },
+  pollInterval: { zh: 'TICK 轮询间隔', en: 'Tick Poll Interval', es: 'Intervalo de Poll' },
+  pollIntervalDesc: { zh: '后台拉取公开成交数据的频率（秒）', en: 'How often to poll public trades (seconds)', es: 'Frecuencia de poll (seg)' },
+  windowSec: { zh: '趋势窗口', en: 'Trend Window', es: 'Ventana de Tendencia' },
+  windowSecDesc: { zh: '计算买卖压力与动量使用的滚动时间窗口（秒）', en: 'Rolling window for buy/sell pressure and momentum (seconds)', es: 'Ventana rolling (seg)' },
+  minTicks: { zh: '最少 TICK 数', en: 'Min Tick Count', es: 'Mín. TICKs' },
+  minTicksDesc: { zh: '窗口内至少需要的成交笔数，不足则不产生方向信号', en: 'Minimum trades in window before emitting a signal', es: 'Mínimo de trades en ventana' },
+  minBuyPressure: { zh: '做多买压阈值', en: 'Long Buy Pressure', es: 'Presión Compra (Long)' },
+  minBuyPressureDesc: { zh: '主动买入成交额占比达到此值且动量为正，判定为做多信号', en: 'Buy volume ratio threshold for long signal with positive momentum', es: 'Ratio compra para long' },
+  minSellPressure: { zh: '做空卖压阈值', en: 'Short Sell Pressure', es: 'Presión Venta (Short)' },
+  minSellPressureDesc: { zh: '主动卖出成交额占比达到此值且动量为负，判定为做空信号', en: 'Sell volume ratio threshold for short signal with negative momentum', es: 'Ratio venta para short' },
+  minMomentumPct: { zh: '最小价格动量', en: 'Min Price Momentum', es: 'Momento Mínimo' },
+  minMomentumPctDesc: { zh: '窗口内首尾价格变化百分比阈值（%）', en: 'Min price change % over the window', es: 'Cambio de precio mínimo (%)' },
+  alwaysWhenPositions: { zh: '有持仓时始终调用 AI', en: 'Always Call AI With Open Positions', es: 'Siempre AI con Posiciones' },
+  alwaysWhenPositionsDesc: {
+    zh: '有持仓时跳过前置门禁，便于 AI 处理止盈止损；无持仓时才等待方向信号',
+    en: 'Bypass gate when holding positions (for exit management); gate only applies when flat',
+    es: 'Omitir gate con posiciones abiertas',
+  },
+  signalLogic: { zh: '信号逻辑', en: 'Signal Logic', es: 'Lógica de Señal' },
+  signalLogicDesc: {
+    zh: '做多：买压 ≥ 阈值 且 动量 ≥ +阈值；做空：卖压 ≥ 阈值 且 动量 ≤ -阈值',
+    en: 'Long: buy pressure ≥ threshold AND momentum ≥ +threshold; Short: sell pressure ≥ threshold AND momentum ≤ -threshold',
+    es: 'Long: presión compra + momentum positivo; Short: presión venta + momentum negativo',
+  },
+};
+
+// ============================================================================
 // PROMPT SECTIONS TRANSLATIONS (12+ keys)
 // ============================================================================
 export const promptSections = {
@@ -293,6 +335,7 @@ export const zhStrategy = {
   ...Object.fromEntries(Object.entries(gridConfig).map(([k, v]) => [k, v.zh])),
   ...Object.fromEntries(Object.entries(gridRisk).map(([k, v]) => [k, v.zh])),
   ...Object.fromEntries(Object.entries(riskControl).map(([k, v]) => [k, v.zh])),
+  ...Object.fromEntries(Object.entries(preDecision).map(([k, v]) => [k, v.zh])),
   ...Object.fromEntries(Object.entries(promptSections).map(([k, v]) => [k, v.zh])),
   ...Object.fromEntries(Object.entries(indicator).map(([k, v]) => [k, v.zh])),
   ...Object.fromEntries(Object.entries(publishSettings).map(([k, v]) => [k, v.zh])),
@@ -304,6 +347,7 @@ export const enStrategy = {
   ...Object.fromEntries(Object.entries(gridConfig).map(([k, v]) => [k, v.en])),
   ...Object.fromEntries(Object.entries(gridRisk).map(([k, v]) => [k, v.en])),
   ...Object.fromEntries(Object.entries(riskControl).map(([k, v]) => [k, v.en])),
+  ...Object.fromEntries(Object.entries(preDecision).map(([k, v]) => [k, v.en])),
   ...Object.fromEntries(Object.entries(promptSections).map(([k, v]) => [k, v.en])),
   ...Object.fromEntries(Object.entries(indicator).map(([k, v]) => [k, v.en])),
   ...Object.fromEntries(Object.entries(publishSettings).map(([k, v]) => [k, v.en])),
@@ -315,6 +359,7 @@ export const esStrategy = {
   ...Object.fromEntries(Object.entries(gridConfig).map(([k, v]) => [k, v.es])),
   ...Object.fromEntries(Object.entries(gridRisk).map(([k, v]) => [k, v.es])),
   ...Object.fromEntries(Object.entries(riskControl).map(([k, v]) => [k, v.es])),
+  ...Object.fromEntries(Object.entries(preDecision).map(([k, v]) => [k, v.es])),
   ...Object.fromEntries(Object.entries(promptSections).map(([k, v]) => [k, v.es])),
   ...Object.fromEntries(Object.entries(indicator).map(([k, v]) => [k, v.es])),
   ...Object.fromEntries(Object.entries(publishSettings).map(([k, v]) => [k, v.es])),

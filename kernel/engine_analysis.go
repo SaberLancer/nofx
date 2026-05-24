@@ -294,8 +294,8 @@ func extractDecisions(response string) ([]Decision, error) {
 		if err := validateJSONFormat(jsonContent); err != nil {
 			return nil, fmt.Errorf("JSON format validation failed: %w\nJSON content: %s\nFull response:\n%s", err, jsonContent, response)
 		}
-		var decisions []Decision
-		if err := json.Unmarshal([]byte(jsonContent), &decisions); err != nil {
+		decisions, err := unmarshalDecisions(jsonContent)
+		if err != nil {
 			return nil, fmt.Errorf("JSON parsing failed: %w\nJSON content: %s", err, jsonContent)
 		}
 		return decisions, nil
@@ -326,11 +326,31 @@ func extractDecisions(response string) ([]Decision, error) {
 		return nil, fmt.Errorf("JSON format validation failed: %w\nJSON content: %s\nFull response:\n%s", err, jsonContent, response)
 	}
 
-	var decisions []Decision
-	if err := json.Unmarshal([]byte(jsonContent), &decisions); err != nil {
+	decisions, err := unmarshalDecisions(jsonContent)
+	if err != nil {
 		return nil, fmt.Errorf("JSON parsing failed: %w\nJSON content: %s", err, jsonContent)
 	}
 
+	return decisions, nil
+}
+
+type decisionDTO struct {
+	Decision
+	Reason string `json:"reason,omitempty"`
+}
+
+func unmarshalDecisions(jsonContent string) ([]Decision, error) {
+	var dtos []decisionDTO
+	if err := json.Unmarshal([]byte(jsonContent), &dtos); err != nil {
+		return nil, err
+	}
+	decisions := make([]Decision, len(dtos))
+	for i, dto := range dtos {
+		decisions[i] = dto.Decision
+		if decisions[i].Reasoning == "" && dto.Reason != "" {
+			decisions[i].Reasoning = dto.Reason
+		}
+	}
 	return decisions, nil
 }
 
@@ -368,11 +388,14 @@ func validateJSONFormat(jsonStr string) error {
 		return fmt.Errorf("JSON must start with [{ (whitespace allowed), actual: %s", trimmed[:min(20, len(trimmed))])
 	}
 
-	if strings.Contains(jsonStr, "~") {
+	if strings.Contains(jsonStr, "~") && containsOutsideJSONStrings(jsonStr, '~') {
 		return fmt.Errorf("JSON cannot contain range symbol ~, all numbers must be precise single values")
 	}
 
 	for i := 0; i < len(jsonStr)-4; i++ {
+		if isInsideJSONString(jsonStr, i) {
+			continue
+		}
 		if jsonStr[i] >= '0' && jsonStr[i] <= '9' &&
 			jsonStr[i+1] == ',' &&
 			jsonStr[i+2] >= '0' && jsonStr[i+2] <= '9' &&
@@ -383,6 +406,32 @@ func validateJSONFormat(jsonStr string) error {
 	}
 
 	return nil
+}
+
+// isInsideJSONString reports whether byte index i is inside a JSON string literal.
+func isInsideJSONString(s string, idx int) bool {
+	inString := false
+	escaped := false
+	for i := 0; i < idx && i < len(s); i++ {
+		switch {
+		case escaped:
+			escaped = false
+		case inString && s[i] == '\\':
+			escaped = true
+		case s[i] == '"':
+			inString = !inString
+		}
+	}
+	return inString
+}
+
+func containsOutsideJSONStrings(s string, target byte) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] == target && !isInsideJSONString(s, i) {
+			return true
+		}
+	}
+	return false
 }
 
 func min(a, b int) int {

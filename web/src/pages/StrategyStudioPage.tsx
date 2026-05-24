@@ -29,6 +29,7 @@ import {
   Download,
   Upload,
   Globe,
+  ScanLine,
 } from 'lucide-react'
 import type {
   Strategy,
@@ -41,6 +42,7 @@ import { confirmToast, notify } from '../lib/notify'
 import { CoinSourceEditor } from '../components/strategy/CoinSourceEditor'
 import { IndicatorEditor } from '../components/strategy/IndicatorEditor'
 import { RiskControlEditor } from '../components/strategy/RiskControlEditor'
+import { PreDecisionEditor } from '../components/strategy/PreDecisionEditor'
 import { PromptSectionsEditor } from '../components/strategy/PromptSectionsEditor'
 import { PublishSettingsEditor } from '../components/strategy/PublishSettingsEditor'
 import {
@@ -104,6 +106,7 @@ export function StrategyStudioPage() {
   const [expandedSections, setExpandedSections] = useState({
     gridConfig: true,
     coinSource: true,
+    preDecision: false,
     indicators: false,
     riskControl: false,
     promptSections: false,
@@ -724,6 +727,21 @@ export function StrategyStudioPage() {
         <CoinSourceEditor
           config={currentAIConfig.coin_source}
           onChange={(coinSource) => updateAIConfig('coin_source', coinSource)}
+          disabled={selectedStrategy?.is_default}
+          language={language}
+        />
+      ),
+    },
+    {
+      key: 'preDecision' as const,
+      icon: ScanLine,
+      color: '#60a5fa',
+      title: tr('preDecision'),
+      forStrategyType: 'ai_trading' as const,
+      content: currentAIConfig && (
+        <PreDecisionEditor
+          config={currentAIConfig.pre_decision}
+          onChange={(preDecision) => updateAIConfig('pre_decision', preDecision)}
           disabled={selectedStrategy?.is_default}
           language={language}
         />

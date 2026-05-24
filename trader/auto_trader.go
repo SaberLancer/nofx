@@ -5,6 +5,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"nofx/kernel"
 	"nofx/logger"
+	"nofx/market"
 	"nofx/mcp"
 	_ "nofx/mcp/payment"
 	_ "nofx/mcp/provider"
@@ -177,6 +178,7 @@ type AutoTrader struct {
 	consecutiveAIFailures int                // Consecutive AI call failures
 	safeMode              bool               // Safe mode: no new positions, protect existing ones
 	safeModeReason        string             // Why safe mode was activated
+	preDecisionTracker    *market.TickTrendTracker
 }
 
 // NewAutoTrader creates an automatic trader
@@ -417,6 +419,9 @@ func (at *AutoTrader) Run() error {
 
 	// Start drawdown monitoring
 	at.startDrawdownMonitor()
+
+	// Start tick-based pre-decision trend monitor (gates AI when enabled)
+	at.startPreDecisionMonitor()
 
 	// Start Lighter order sync if using Lighter exchange
 	if at.exchange == "lighter" {

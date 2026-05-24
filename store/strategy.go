@@ -183,6 +183,7 @@ func (c *StrategyConfig) NormalizeProductSchema() {
 	if len(c.Indicators.Klines.SelectedTimeframes) > 0 {
 		c.Indicators.Klines.EnableMultiTimeframe = true
 	}
+	c.PreDecision.Normalize()
 }
 
 func normalizeStrategyType(value string) string {
@@ -525,6 +526,7 @@ type StrategyConfig struct {
 	// compatibility, but JSON persistence nests them under ai_config.
 	CoinSource     CoinSourceConfig     `json:"-"`
 	Indicators     IndicatorConfig      `json:"-"`
+	PreDecision    PreDecisionConfig    `json:"-"`
 	CustomPrompt   string               `json:"-"`
 	RiskControl    RiskControlConfig    `json:"-"`
 	PromptSections PromptSectionsConfig `json:"-"`
@@ -542,9 +544,47 @@ type StrategyConfig struct {
 type AIStrategyConfig struct {
 	CoinSource     CoinSourceConfig     `json:"coin_source"`
 	Indicators     IndicatorConfig      `json:"indicators"`
+	PreDecision    PreDecisionConfig    `json:"pre_decision,omitempty"`
 	CustomPrompt   string               `json:"custom_prompt,omitempty"`
 	RiskControl    RiskControlConfig    `json:"risk_control"`
 	PromptSections PromptSectionsConfig `json:"prompt_sections,omitempty"`
+}
+
+// PreDecisionConfig gates AI analysis behind real-time tick trend signals.
+type PreDecisionConfig struct {
+	Enabled             bool    `json:"enabled"`
+	PollIntervalSec     int     `json:"poll_interval_sec,omitempty"`
+	WindowSec           int     `json:"window_sec,omitempty"`
+	MinTicks            int     `json:"min_ticks,omitempty"`
+	MinBuyPressure      float64 `json:"min_buy_pressure,omitempty"`
+	MinSellPressure     float64 `json:"min_sell_pressure,omitempty"`
+	MinMomentumPct      float64 `json:"min_momentum_pct,omitempty"`
+	AlwaysWhenPositions bool    `json:"always_when_positions,omitempty"`
+}
+
+// Normalize fills default pre-decision thresholds.
+func (c *PreDecisionConfig) Normalize() {
+	if !c.Enabled {
+		return
+	}
+	if c.PollIntervalSec <= 0 {
+		c.PollIntervalSec = 5
+	}
+	if c.WindowSec <= 0 {
+		c.WindowSec = 60
+	}
+	if c.MinTicks <= 0 {
+		c.MinTicks = 20
+	}
+	if c.MinBuyPressure <= 0 {
+		c.MinBuyPressure = 0.55
+	}
+	if c.MinSellPressure <= 0 {
+		c.MinSellPressure = 0.55
+	}
+	if c.MinMomentumPct <= 0 {
+		c.MinMomentumPct = 0.03
+	}
 }
 
 // PublishStrategyConfig contains settings shared by all strategy types.
@@ -579,6 +619,7 @@ func (c StrategyConfig) MarshalJSON() ([]byte, error) {
 		out.AIConfig = &AIStrategyConfig{
 			CoinSource:     c.CoinSource,
 			Indicators:     c.Indicators,
+			PreDecision:    c.PreDecision,
 			CustomPrompt:   c.CustomPrompt,
 			RiskControl:    c.RiskControl,
 			PromptSections: c.PromptSections,
@@ -618,6 +659,7 @@ func (c *StrategyConfig) UnmarshalJSON(data []byte) error {
 	if raw.AIConfig != nil {
 		c.CoinSource = raw.AIConfig.CoinSource
 		c.Indicators = raw.AIConfig.Indicators
+		c.PreDecision = raw.AIConfig.PreDecision
 		c.CustomPrompt = raw.AIConfig.CustomPrompt
 		c.RiskControl = raw.AIConfig.RiskControl
 		c.PromptSections = raw.AIConfig.PromptSections

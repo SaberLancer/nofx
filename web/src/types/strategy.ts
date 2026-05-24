@@ -60,10 +60,34 @@ export interface StrategyConfig {
 export interface AIStrategyConfig {
   coin_source: CoinSourceConfig;
   indicators: IndicatorConfig;
+  pre_decision?: PreDecisionConfig;
   custom_prompt?: string;
   risk_control: RiskControlConfig;
   prompt_sections?: PromptSectionsConfig;
 }
+
+/** Tick trend gate before AI analysis */
+export interface PreDecisionConfig {
+  enabled?: boolean;
+  poll_interval_sec?: number;
+  window_sec?: number;
+  min_ticks?: number;
+  min_buy_pressure?: number;
+  min_sell_pressure?: number;
+  min_momentum_pct?: number;
+  always_when_positions?: boolean;
+}
+
+export const defaultPreDecisionConfig: PreDecisionConfig = {
+  enabled: false,
+  poll_interval_sec: 5,
+  window_sec: 60,
+  min_ticks: 20,
+  min_buy_pressure: 0.55,
+  min_sell_pressure: 0.55,
+  min_momentum_pct: 0.03,
+  always_when_positions: true,
+};
 
 export interface PublishStrategyConfig {
   is_public: boolean;
