@@ -371,7 +371,8 @@ func (s *Server) handleBacktestTrades(c *gin.Context) {
 	if _, err := s.ensureBacktestRunOwnership(runID, userID); writeBacktestAccessError(c, err) {
 		return
 	}
-	limit := queryInt(c, "limit", 1000)
+	// limit=0 (default) returns all trades; positive limit applies uniform sampling for charts
+	limit := queryInt(c, "limit", 0)
 
 	events, err := s.backtestManager.LoadTrades(runID, limit)
 	if err != nil {

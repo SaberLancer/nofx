@@ -114,12 +114,12 @@ export const backtestApi = {
 
   async getBacktestTrades(
     runId: string,
-    limit = 200
+    limit = 0
   ): Promise<BacktestTradeEvent[]> {
-    const query = new URLSearchParams({
-      run_id: runId,
-      limit: String(limit),
-    })
+    const query = new URLSearchParams({ run_id: runId })
+    if (limit > 0) {
+      query.set('limit', String(limit))
+    }
     const res = await fetch(`${API_BASE}/backtest/trades?${query}`, {
       headers: getAuthHeaders(),
     })

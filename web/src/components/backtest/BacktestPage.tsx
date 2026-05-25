@@ -112,7 +112,7 @@ export function BacktestPage() {
 
   const { data: trades } = useSWR<BacktestTradeEvent[]>(
     selectedRunId ? ['bt-trades', selectedRunId] : null,
-    () => api.getBacktestTrades(selectedRunId!, 500),
+    () => api.getBacktestTrades(selectedRunId!, 0),
     { refreshInterval: 5000 }
   )
 
@@ -556,7 +556,10 @@ export function BacktestPage() {
                       )}
 
                       {viewTab === 'trades' && (
-                        <BacktestTradesTab trades={trades} />
+                        <BacktestTradesTab
+                          key={selectedRunId}
+                          trades={trades}
+                        />
                       )}
 
                       {viewTab === 'decisions' && (
