@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { DecisionRecord, DecisionAction } from '../../types'
 import { t, type Language } from '../../i18n/translations'
+import { isPreDecisionSkipped } from '../../lib/decision'
 
 interface DecisionCardProps {
   decision: DecisionRecord
@@ -218,6 +219,7 @@ function ActionCard({ action, language, onSymbolClick }: { action: DecisionActio
 }
 
 export function DecisionCard({ decision, language, onSymbolClick }: DecisionCardProps) {
+  const preDecisionSkipped = isPreDecisionSkipped(decision)
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
   const [showInputPrompt, setShowInputPrompt] = useState(false)
   const [showCoT, setShowCoT] = useState(false)
@@ -272,15 +274,30 @@ export function DecisionCard({ decision, language, onSymbolClick }: DecisionCard
             </div>
           </div>
         </div>
-        <div
-          className="px-4 py-1.5 rounded-full text-xs font-bold tracking-wider"
-          style={
-            decision.success
-              ? { background: 'rgba(14, 203, 129, 0.15)', color: '#0ECB81', border: '1px solid rgba(14, 203, 129, 0.3)' }
-              : { background: 'rgba(246, 70, 93, 0.15)', color: '#F6465D', border: '1px solid rgba(246, 70, 93, 0.3)' }
-          }
-        >
-          {t(decision.success ? 'success' : 'failed', language)}
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          {preDecisionSkipped && (
+            <div
+              className="px-4 py-1.5 rounded-full text-xs font-bold tracking-wider"
+              style={{
+                background: 'rgba(240, 185, 11, 0.12)',
+                color: '#F0B90B',
+                border: '1px solid rgba(240, 185, 11, 0.35)',
+              }}
+              title={t('preDecisionSkippedHint', language)}
+            >
+              {t('preDecisionSkipped', language)}
+            </div>
+          )}
+          <div
+            className="px-4 py-1.5 rounded-full text-xs font-bold tracking-wider"
+            style={
+              decision.success
+                ? { background: 'rgba(14, 203, 129, 0.15)', color: '#0ECB81', border: '1px solid rgba(14, 203, 129, 0.3)' }
+                : { background: 'rgba(246, 70, 93, 0.15)', color: '#F6465D', border: '1px solid rgba(246, 70, 93, 0.3)' }
+            }
+          >
+            {t(decision.success ? 'success' : 'failed', language)}
+          </div>
         </div>
       </div>
 

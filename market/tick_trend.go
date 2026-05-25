@@ -67,21 +67,29 @@ func (t *TickTrendTracker) TrackSymbols(symbols []string) {
 }
 
 func (t *TickTrendTracker) IngestBatch(batch []RawTick) {
+	t.IngestBatchAt(batch, time.Time{})
+}
+
+// IngestBatchAt ingests ticks using referenceTime as the window end (for backtest simulation).
+// When referenceTime is zero, time.Now() is used (live trading).
+func (t *TickTrendTracker) IngestBatchAt(batch []RawTick, referenceTime time.Time) {
 	if len(batch) == 0 {
 		return
+	}
+	if referenceTime.IsZero() {
+		referenceTime = time.Now()
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	now := time.Now()
-	cutoff := now.Add(-time.Duration(t.settings.WindowSec) * time.Second)
+	cutoff := referenceTime.Add(-time.Duration(t.settings.WindowSec) * time.Second)
 
 	for _, tick := range batch {
 		symbol := Normalize(tick.Symbol)
 		buf := append(t.ticks[symbol], tick)
 		buf = pruneTicks(buf, cutoff)
 		t.ticks[symbol] = buf
-		t.signals[symbol] = evaluateTrend(symbol, buf, t.settings, now)
+		t.signals[symbol] = evaluateTrend(symbol, buf, t.settings, referenceTime)
 	}
 }
 

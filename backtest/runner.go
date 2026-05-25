@@ -11,6 +11,7 @@ import (
 
 	"nofx/kernel"
 	"nofx/logger"
+	"nofx/market"
 	"nofx/mcp"
 )
 
@@ -29,7 +30,8 @@ type Runner struct {
 	cfg            BacktestConfig
 	feed           *DataFeed
 	account        *BacktestAccount
-	strategyEngine *kernel.StrategyEngine
+	strategyEngine     *kernel.StrategyEngine
+	preDecisionTracker *market.TickTrendTracker
 
 	decisionLogDir string
 	mcpClient      mcp.AIClient
@@ -133,6 +135,7 @@ func NewRunner(cfg BacktestConfig, mcpClient mcp.AIClient) (*Runner, error) {
 		aiCache:        aiCache,
 		cachePath:      cachePath,
 	}
+	r.initPreDecision()
 
 	if err := r.initLock(); err != nil {
 		return nil, err

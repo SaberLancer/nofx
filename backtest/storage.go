@@ -423,6 +423,7 @@ func LoadDecisionTrace(runID string, cycle int) (*store.DecisionRecord, error) {
 			continue
 		}
 		if cycle <= 0 || record.CycleNumber == cycle {
+			record.EnrichPreDecisionSkipped()
 			return &record, nil
 		}
 	}
@@ -487,6 +488,7 @@ func LoadDecisionRecords(runID string, limit, offset int) ([]*store.DecisionReco
 		if err := json.Unmarshal(data, &record); err != nil {
 			continue
 		}
+		record.EnrichPreDecisionSkipped()
 		records = append(records, &record)
 	}
 	return records, nil

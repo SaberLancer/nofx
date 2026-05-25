@@ -80,6 +80,7 @@ export interface DecisionRecord {
   execution_log: string[]
   success: boolean
   error_message?: string
+  pre_decision_skipped?: boolean
 }
 
 export interface Statistics {

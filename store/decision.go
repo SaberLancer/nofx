@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -54,6 +55,25 @@ type DecisionRecord struct {
 	AccountState        AccountSnapshot    `json:"account_state"`
 	Positions           []PositionSnapshot `json:"positions"`
 	Decisions           []DecisionAction   `json:"decisions"`
+	PreDecisionSkipped  bool               `json:"pre_decision_skipped"`
+}
+
+// EnrichPreDecisionSkipped sets PreDecisionSkipped from execution_log when the flag was not persisted (legacy records).
+func (r *DecisionRecord) EnrichPreDecisionSkipped() {
+	if r == nil || r.PreDecisionSkipped {
+		return
+	}
+	for _, line := range r.ExecutionLog {
+		if IsPreDecisionSkipLogLine(line) {
+			r.PreDecisionSkipped = true
+			return
+		}
+	}
+}
+
+// IsPreDecisionSkipLogLine reports whether an execution log line indicates AI was skipped by pre-decision.
+func IsPreDecisionSkipLogLine(line string) bool {
+	return strings.HasPrefix(line, "pre-decision:") && !strings.HasPrefix(line, "pre-decision signal:")
 }
 
 // AccountSnapshot account state snapshot
@@ -141,6 +161,7 @@ func (db *DecisionRecordDB) toRecord() *DecisionRecord {
 	json.Unmarshal([]byte(db.CandidateCoins), &record.CandidateCoins)
 	json.Unmarshal([]byte(db.ExecutionLog), &record.ExecutionLog)
 	json.Unmarshal([]byte(db.Decisions), &record.Decisions)
+	record.EnrichPreDecisionSkipped()
 	return record
 }
 

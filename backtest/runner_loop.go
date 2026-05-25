@@ -91,6 +91,22 @@ func (r *Runner) stepOnce() error {
 			return err
 		}
 		record = rec
+		record.CycleNumber = callCount
+
+		r.ingestPreDecisionTicks(ctx, ts)
+		if gate, reason := r.shouldGateAIByPreDecision(ctx); gate {
+			record.Success = true
+			record.PreDecisionSkipped = true
+			record.Decisions = nil
+			if reason != "" {
+				execLog = append(execLog, reason)
+			}
+			logger.Infof("📊 Backtest [%s] ⏭ %s", r.cfg.RunID, reason)
+		} else {
+			if reason != "" {
+				execLog = append(execLog, reason)
+				logger.Infof("📊 Backtest [%s] ✅ %s", r.cfg.RunID, reason)
+			}
 
 		var (
 			fullDecision *kernel.FullDecision
@@ -166,6 +182,7 @@ func (r *Runner) stepOnce() error {
 				decisionActions = append(decisionActions, actionRecord)
 			}
 		}
+		} // end pre-decision else (AI path)
 	}
 
 	cycleForLog := state.DecisionCycle
@@ -355,6 +372,7 @@ func (r *Runner) buildDecisionContext(ts int64, marketData map[string]*market.Da
 	}
 
 	record := &store.DecisionRecord{
+		CycleNumber: callCount,
 		AccountState: store.AccountSnapshot{
 			TotalBalance:          accountInfo.TotalEquity,
 			AvailableBalance:      accountInfo.AvailableBalance,

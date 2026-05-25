@@ -29,6 +29,20 @@ func FetchRecentTicks(exchange, symbol string, limit int) ([]RawTick, error) {
 	}
 }
 
+// FetchTicksInWindow loads historical public trades in (endTime-windowSec, endTime].
+// Backtest uses Binance futures aggTrades (startTime/endTime) as the reference tape.
+func FetchTicksInWindow(exchange, symbol string, endTime time.Time, windowSec, limit int) ([]RawTick, error) {
+	if windowSec <= 0 {
+		windowSec = 60
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	start := endTime.Add(-time.Duration(windowSec) * time.Second)
+	_ = exchange // historical window currently uses Binance futures tape for all exchanges
+	return fetchBinanceAggTradesWindow(symbol, start, endTime, limit)
+}
+
 func okxInstID(symbol string) string {
 	base := strings.TrimSuffix(Normalize(symbol), "USDT")
 	return fmt.Sprintf("%s-USDT-SWAP", base)

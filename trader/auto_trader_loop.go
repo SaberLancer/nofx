@@ -98,6 +98,7 @@ func (at *AutoTrader) runCycle() error {
 	if gate, reason := at.shouldGateAIByPreDecision(ctx); gate {
 		at.logInfof("⏭ %s", reason)
 		record.Success = true
+		record.PreDecisionSkipped = true
 		record.ExecutionLog = append(record.ExecutionLog, reason)
 		record.AccountState = store.AccountSnapshot{
 			TotalBalance:          ctx.Account.TotalEquity,

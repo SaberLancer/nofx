@@ -296,6 +296,7 @@ func loadDecisionTraceDB(runID string, cycle int) (*store.DecisionRecord, error)
 	if err := json.Unmarshal(payload, &record); err != nil {
 		return nil, err
 	}
+	record.EnrichPreDecisionSkipped()
 	return &record, nil
 }
 
@@ -335,6 +336,7 @@ func loadDecisionRecordsDB(runID string, limit, offset int) ([]*store.DecisionRe
 		if err := json.Unmarshal(payload, &record); err != nil {
 			return nil, err
 		}
+		record.EnrichPreDecisionSkipped()
 		records = append(records, &record)
 	}
 	return records, rows.Err()
