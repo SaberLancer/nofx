@@ -17,6 +17,10 @@ nofx_test
 *.test
 *.out
 .gocache/
+coverage.out
+*.prof
+*.pprof
+vendor/
 
 # 操作系统
 .DS_Store
@@ -32,8 +36,13 @@ Thumbs.db
 
 # 环境变量
 .env
+.env.*
+!.env.example
 config.json
+config.local.json
+config.*.local.json
 configbak.json
+web/.env.local
 
 # 数据目录（数据库、日志等）
 data/
@@ -41,7 +50,15 @@ data/
 
 # 决策日志
 decision_logs/
-nofx_test
+
+# 回测运行时数据（ai_cache、lock、checkpoint、jsonl 等）
+backtests/
+
+# 原子写入临时文件（回测等）
+.tmp-*
+
+# 回测/流水日志
+*.jsonl
 
 # Node.js
 web/node_modules
@@ -49,6 +66,11 @@ web/node_modules/
 node_modules/
 web/dist/
 web/.vite/
+web/.eslintcache
+*.tsbuildinfo
+
+# 本地导出包（回测导出等）
+*.zip
 
 # ESLint 临时报告文件（调试时生成，不纳入版本控制）
 eslint-*.json
@@ -56,8 +78,10 @@ eslint-*.json
 # 本地 Agent QA seed（个人调试用，不纳入版本控制）
 docs/qa/fixtures/agent_self_play_seed.zh-CN.json
 
-# VS code
+# VS code / Cursor
 .vscode
+.cursor/
+*.code-workspace
 
 # 密钥和敏感文件
 # 注意：crypto目录包含加密服务代码，应该被提交
