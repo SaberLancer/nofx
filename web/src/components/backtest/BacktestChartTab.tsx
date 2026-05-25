@@ -16,18 +16,24 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ReferenceDot,
+  ReferenceLine,
+  Legend,
 } from 'recharts'
 import {
   Clock,
   AlertTriangle,
   RefreshCw,
   CandlestickChart as CandlestickIcon,
+  GitCompare,
 } from 'lucide-react'
+import { TRADER_COLORS } from '../../utils/traderColors'
 import { api } from '../../lib/api'
 import { t, type Language } from '../../i18n/translations'
 import type {
@@ -128,6 +134,202 @@ export function EquityChart({ equity, trades }: EquityChartProps) {
           ))}
         </AreaChart>
       </ResponsiveContainer>
+    </div>
+  )
+}
+
+// ============ Symbol PnL Comparison (multi-line) ============
+
+const SYMBOL_LINE_COLORS = TRADER_COLORS
+
+function displaySymbol(symbol: string): string {
+  return symbol.replace(/USDT$/i, '')
+}
+
+export function buildSymbolPnLComparisonData(trades: BacktestTradeEvent[]) {
+  const symbols = [...new Set(trades.map((t) => t.symbol).filter(Boolean))].sort()
+  if (symbols.length === 0) {
+    return { chartData: [] as Record<string, number | string>[], symbols: [] as string[] }
+  }
+
+  const cumBySymbol = new Map<string, { ts: number; pnl: number }[]>()
+
+  for (const sym of symbols) {
+    const symTrades = trades
+      .filter((t) => t.symbol === sym)
+      .sort((a, b) => a.ts - b.ts)
+    let cum = 0
+    const pts: { ts: number; pnl: number }[] = []
+    if (symTrades.length > 0) {
+      pts.push({ ts: symTrades[0].ts, pnl: 0 })
+    }
+    for (const t of symTrades) {
+      cum += t.realized_pnl
+      pts.push({ ts: t.ts, pnl: cum })
+    }
+    cumBySymbol.set(sym, pts)
+  }
+
+  const timeline = Array.from(new Set(trades.map((t) => t.ts))).sort(
+    (a, b) => a - b
+  )
+
+  const chartData = timeline.map((ts) => {
+    const row: Record<string, number | string> = {
+      ts,
+      time: new Date(ts).toLocaleString(),
+    }
+    for (const sym of symbols) {
+      const pts = cumBySymbol.get(sym)!
+      let value = 0
+      for (const p of pts) {
+        if (p.ts <= ts) {
+          value = p.pnl
+        } else {
+          break
+        }
+      }
+      row[sym] = value
+    }
+    return row
+  })
+
+  return { chartData, symbols }
+}
+
+interface SymbolPnLComparisonChartProps {
+  trades: BacktestTradeEvent[]
+  language: Language
+}
+
+export function SymbolPnLComparisonChart({
+  trades,
+  language,
+}: SymbolPnLComparisonChartProps) {
+  const { chartData, symbols } = useMemo(
+    () => buildSymbolPnLComparisonData(trades),
+    [trades]
+  )
+
+  const finalPnL = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const sym of symbols) {
+      map[sym] = 0
+    }
+    if (chartData.length === 0) {
+      return map
+    }
+    const last = chartData[chartData.length - 1]
+    for (const sym of symbols) {
+      map[sym] = Number(last[sym] ?? 0)
+    }
+    return map
+  }, [chartData, symbols])
+
+  if (symbols.length === 0) {
+    return (
+      <div className="py-12 text-center" style={{ color: '#5E6673' }}>
+        {t('backtestChart.noTrades', language)}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs" style={{ color: '#5E6673' }}>
+        {t('backtestChart.symbolPnlHint', language)}
+      </p>
+      <div className="w-full h-[320px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={chartData}
+            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+          >
+            <CartesianGrid stroke="rgba(43, 49, 57, 0.5)" strokeDasharray="3 3" />
+            <XAxis
+              dataKey="time"
+              tick={{ fill: '#848E9C', fontSize: 10 }}
+              axisLine={{ stroke: '#2B3139' }}
+              tickLine={{ stroke: '#2B3139' }}
+              hide
+            />
+            <YAxis
+              tick={{ fill: '#848E9C', fontSize: 10 }}
+              axisLine={{ stroke: '#2B3139' }}
+              tickLine={{ stroke: '#2B3139' }}
+              width={56}
+              tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}`}
+            />
+            <Tooltip
+              contentStyle={{
+                background: '#1E2329',
+                border: '1px solid #2B3139',
+                borderRadius: 8,
+                color: '#EAECEF',
+              }}
+              labelStyle={{ color: '#848E9C' }}
+              formatter={(value: number, name: string) => {
+                const v = Number(value)
+                return [
+                  `${v >= 0 ? '+' : ''}${v.toFixed(2)} USDT`,
+                  displaySymbol(name),
+                ]
+              }}
+            />
+            <ReferenceLine
+              y={0}
+              stroke="#474D57"
+              strokeDasharray="4 4"
+            />
+            <Legend
+              wrapperStyle={{ fontSize: 12, color: '#848E9C' }}
+              formatter={(value: string) => displaySymbol(value)}
+            />
+            {symbols.map((sym, idx) => (
+              <Line
+                key={sym}
+                type="stepAfter"
+                dataKey={sym}
+                name={sym}
+                stroke={SYMBOL_LINE_COLORS[idx % SYMBOL_LINE_COLORS.length]}
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4 }}
+                isAnimationActive={chartData.length < 500}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {symbols.map((sym, idx) => {
+          const pnl = finalPnL[sym] ?? 0
+          const color = SYMBOL_LINE_COLORS[idx % SYMBOL_LINE_COLORS.length]
+          return (
+            <div
+              key={sym}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
+              style={{ background: '#1E2329', border: '1px solid #2B3139' }}
+            >
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: color }}
+              />
+              <span style={{ color: '#EAECEF' }}>{displaySymbol(sym)}</span>
+              <span style={{ color: '#848E9C' }}>
+                {t('backtestChart.symbolPnlFinal', language)}:
+              </span>
+              <span
+                className="font-mono font-bold"
+                style={{ color: pnl >= 0 ? '#0ECB81' : '#F6465D' }}
+              >
+                {pnl >= 0 ? '+' : ''}
+                {pnl.toFixed(2)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -416,6 +618,19 @@ export function BacktestChartTab({
           </div>
         )}
       </div>
+
+      {trades && trades.length > 0 && (
+        <div>
+          <h4
+            className="text-sm font-medium mb-3 flex items-center gap-2"
+            style={{ color: '#EAECEF' }}
+          >
+            <GitCompare size={16} style={{ color: '#F0B90B' }} />
+            {t('backtestChart.symbolPnlComparison', language)}
+          </h4>
+          <SymbolPnLComparisonChart trades={trades} language={language} />
+        </div>
+      )}
 
       {selectedRunId && trades && trades.length > 0 && (
         <div>

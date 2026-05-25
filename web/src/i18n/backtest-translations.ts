@@ -204,6 +204,10 @@ export const backtestTranslations = {
         close: 'Close',
         equityCurve: 'Equity Curve',
         candlestickTradeMarkers: 'Candlestick & Trade Markers',
+        symbolPnlComparison: 'Symbol PnL Comparison',
+        symbolPnlHint: 'Cumulative realized PnL per symbol (step curve at each trade)',
+        symbolPnlFinal: 'Final',
+        symbolPnlUSDT: 'PnL (USDT)',
       },
     backtestTrades: {
         noTrades: 'No trades yet',
@@ -457,6 +461,10 @@ export const backtestTranslations = {
         close: '平仓',
         equityCurve: '资金曲线',
         candlestickTradeMarkers: 'K线图 & 交易标记',
+        symbolPnlComparison: '交易对盈亏对比',
+        symbolPnlHint: '各交易对累计已实现盈亏（每笔交易后阶梯更新）',
+        symbolPnlFinal: '合计',
+        symbolPnlUSDT: '盈亏 (USDT)',
       },
     faqBacktestLab: '什么是回测实验室？',
   faqBacktestLabAnswer:
@@ -668,6 +676,10 @@ export const backtestTranslations = {
         close: 'Close',
         equityCurve: 'Equity Curve',
         candlestickTradeMarkers: 'Candlestick & Trade Markers',
+        symbolPnlComparison: 'Comparación PnL por símbolo',
+        symbolPnlHint: 'PnL realizado acumulado por símbolo',
+        symbolPnlFinal: 'Final',
+        symbolPnlUSDT: 'PnL (USDT)',
       },
     backtestTrades: {
         noTrades: 'Sin operaciones',
