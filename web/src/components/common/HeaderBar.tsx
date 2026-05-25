@@ -159,6 +159,12 @@ export default function HeaderBar({
                   requiresAuth: true,
                 },
                 {
+                  page: 'backtest',
+                  path: ROUTES.backtest,
+                  label: language === 'zh' ? '回测' : t('backtest', language),
+                  requiresAuth: true,
+                },
+                {
                   page: 'competition',
                   path: ROUTES.competition,
                   label: t('realtimeNav', language),

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"nofx/auth"
+	"nofx/backtest"
 	"nofx/crypto"
 	"nofx/logger"
 	"nofx/manager"
@@ -22,6 +23,7 @@ type Server struct {
 	traderManager             *manager.TraderManager
 	store                     *store.Store
 	cryptoHandler             *CryptoHandler
+	backtestManager           *backtest.Manager
 	exchangeAccountStateCache *ExchangeAccountStateCache
 	httpServer                *http.Server
 	port                      int
@@ -29,7 +31,7 @@ type Server struct {
 }
 
 // NewServer Creates API server
-func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoService *crypto.CryptoService, port int) *Server {
+func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoService *crypto.CryptoService, backtestManager *backtest.Manager, port int) *Server {
 	// Set to Release mode (reduce log output)
 	gin.SetMode(gin.ReleaseMode)
 
@@ -46,6 +48,7 @@ func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoServ
 		traderManager:             traderManager,
 		store:                     st,
 		cryptoHandler:             cryptoHandler,
+		backtestManager:           backtestManager,
 		exchangeAccountStateCache: NewExchangeAccountStateCache(),
 		port:                      port,
 	}
@@ -360,6 +363,9 @@ Returns the most recent AI decision for each symbol analyzed in the last scan cy
 Returns: {"total_trades":<int>,"winning_trades":<int>,"win_rate":<float>,"total_pnl":<float>,"sharpe_ratio":<float>,"max_drawdown":<float>}`,
 				s.handleStatistics)
 
+			// Backtest routes
+			bt := protected.Group("/backtest")
+			s.registerBacktestRoutes(bt)
 		}
 	}
 }

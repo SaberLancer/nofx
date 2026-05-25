@@ -26,6 +26,7 @@ import { AgentChatPage } from '../pages/AgentChatPage'
 import { SettingsPage } from '../pages/SettingsPage'
 import { StrategyMarketPage } from '../pages/StrategyMarketPage'
 import { StrategyStudioPage } from '../pages/StrategyStudioPage'
+import { BacktestPage } from '../components/backtest/BacktestPage'
 import { TraderDashboardPage } from '../pages/TraderDashboardPage'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
@@ -530,6 +531,18 @@ export function AppRoutes() {
         <Route
           path={ROUTES.dashboard}
           element={isAuthenticated ? <DashboardRoute /> : <LandingPage />}
+        />
+        <Route
+          path={ROUTES.backtest}
+          element={
+            isAuthenticated ? (
+              <AppChrome currentPage="backtest" animateContent>
+                <BacktestPage />
+              </AppChrome>
+            ) : (
+              <LandingPage />
+            )
+          }
         />
         <Route
           path={ROUTES.strategy}

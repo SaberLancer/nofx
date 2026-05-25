@@ -404,7 +404,11 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 
 	holdingDuration := ""
 	if pos.UpdateTime > 0 {
-		durationMs := time.Now().UnixMilli() - pos.UpdateTime
+		nowMs := time.Now().UnixMilli()
+		if ctx != nil && ctx.ReferenceTimeMs > 0 {
+			nowMs = ctx.ReferenceTimeMs
+		}
+		durationMs := nowMs - pos.UpdateTime
 		durationMin := durationMs / (1000 * 60)
 		if durationMin < 60 {
 			holdingDuration = fmt.Sprintf(" | Holding Duration %d min", durationMin)

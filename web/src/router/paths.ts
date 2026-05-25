@@ -3,6 +3,7 @@ export type Page =
   | 'competition'
   | 'traders'
   | 'trader'
+  | 'backtest'
   | 'strategy'
   | 'strategy-market'
   | 'data'
@@ -24,6 +25,7 @@ export const ROUTES = {
   competition: '/competition',
   traders: '/traders',
   dashboard: '/dashboard',
+  backtest: '/backtest',
   strategy: '/strategy',
   strategyMarket: '/strategy-market',
 } as const
@@ -33,6 +35,7 @@ export const PAGE_PATHS: Record<Page, string> = {
   competition: ROUTES.competition,
   traders: ROUTES.traders,
   trader: ROUTES.dashboard,
+  backtest: ROUTES.backtest,
   strategy: ROUTES.strategy,
   'strategy-market': ROUTES.strategyMarket,
   data: ROUTES.data,
@@ -47,6 +50,7 @@ export const LEGACY_HASH_ROUTES: Record<string, string> = {
   traders: ROUTES.traders,
   trader: ROUTES.dashboard,
   details: ROUTES.dashboard,
+  backtest: ROUTES.backtest,
   strategy: ROUTES.strategy,
   'strategy-market': ROUTES.strategyMarket,
   data: ROUTES.data,
@@ -61,6 +65,8 @@ export function getCurrentPageForPath(pathname: string): Page | undefined {
       return 'traders'
     case ROUTES.dashboard:
       return 'trader'
+    case ROUTES.backtest:
+      return 'backtest'
     case ROUTES.strategy:
       return 'strategy'
     case ROUTES.strategyMarket:

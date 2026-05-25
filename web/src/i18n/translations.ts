@@ -1,6 +1,8 @@
+import { backtestTranslations } from './backtest-translations'
+
 export type Language = 'en' | 'zh' | 'id'
 
-export const translations = {
+const translationsBase = {
   en: {
     // Header
     appTitle: 'NOFX',
@@ -3779,6 +3781,12 @@ export const translations = {
 
   },
 }
+
+export const translations = {
+  en: { ...translationsBase.en, ...backtestTranslations.en },
+  zh: { ...translationsBase.zh, ...backtestTranslations.zh },
+  id: { ...translationsBase.id, ...backtestTranslations.id },
+} as const
 
 export function t(
   key: string,

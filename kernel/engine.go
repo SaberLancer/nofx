@@ -109,6 +109,8 @@ type Context struct {
 	BTCETHLeverage     int                                `json:"-"`
 	AltcoinLeverage    int                                `json:"-"`
 	Timeframes         []string                           `json:"-"`
+	// ReferenceTimeMs is the simulated "now" for backtest (ms). When zero, wall clock is used.
+	ReferenceTimeMs int64 `json:"-"`
 }
 
 // Decision AI trading decision

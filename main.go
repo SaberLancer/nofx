@@ -5,10 +5,12 @@ import (
 	nofxiagent "nofx/agent"
 	"nofx/api"
 	"nofx/auth"
+	"nofx/backtest"
 	"nofx/config"
 	"nofx/crypto"
 	"nofx/logger"
 	"nofx/manager"
+	"nofx/mcp"
 	_ "nofx/mcp/payment"
 	_ "nofx/mcp/provider"
 	"nofx/store"
@@ -17,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/google/uuid"
@@ -81,6 +84,7 @@ func main() {
 		logger.Fatalf("❌ Failed to initialize database: %v", err)
 	}
 	defer st.Close()
+	backtest.UseDatabaseWithType(st.DB(), st.DBType() == store.DBTypePostgres)
 
 	// Initialize installation ID for experience improvement (anonymous statistics)
 	initInstallationID(st)
@@ -97,8 +101,12 @@ func main() {
 	// time.Sleep(500 * time.Millisecond)
 	logger.Info("📊 Using CoinAnk API for all market data (WebSocket cache disabled)")
 
-	// Create TraderManager
+	// Create TraderManager and BacktestManager
 	traderManager := manager.NewTraderManager()
+	backtestManager := backtest.NewManager(newSharedMCPClient())
+	if err := backtestManager.RestoreRuns(); err != nil {
+		logger.Warnf("⚠️ Failed to restore backtest history: %v", err)
+	}
 
 	// Load all traders from database to memory (may auto-start traders with IsRunning=true)
 	if err := traderManager.LoadTradersFromStore(st); err != nil {
@@ -130,7 +138,7 @@ func main() {
 	}
 
 	// Start API server
-	server := api.NewServer(traderManager, st, cryptoService, cfg.APIServerPort)
+	server := api.NewServer(traderManager, st, cryptoService, backtestManager, cfg.APIServerPort)
 
 	// Create hot-reload channel for Telegram bot; wire it to the API server
 	// so that POST /api/telegram can trigger a bot restart when the token changes.
@@ -197,4 +205,15 @@ func initInstallationID(st *store.Store) {
 
 	// Set installation ID in experience module
 	telemetry.SetInstallationID(installationID)
+}
+
+func newSharedMCPClient() mcp.AIClient {
+	if apiKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY")); apiKey != "" {
+		return mcp.NewAIClientByProvider("deepseek")
+	}
+	if strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL")) != "" || strings.TrimSpace(os.Getenv("OLLAMA_MODEL")) != "" {
+		return mcp.NewAIClientByProvider("ollama")
+	}
+	logger.Warn("⚠️ DEEPSEEK_API_KEY not set; backtest default AI client unavailable until a model is selected per run")
+	return nil
 }
