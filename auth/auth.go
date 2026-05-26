@@ -22,6 +22,10 @@ var tokenBlacklist = struct {
 // maxBlacklistEntries is the maximum capacity threshold for blacklist
 const maxBlacklistEntries = 100_000
 
+// longLoginTTL defines long-lived JWT validity for persistent trading sessions.
+// 10 years avoids frequent re-login interruptions in always-on usage.
+const longLoginTTL = 10 * 365 * 24 * time.Hour
+
 // SetJWTSecret sets the JWT secret key
 func SetJWTSecret(secret string) {
 	JWTSecret = []byte(secret)
@@ -87,7 +91,7 @@ func GenerateJWT(userID, email string) (string, error) {
 		UserID: userID,
 		Email:  email,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // Expires in 24 hours
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(longLoginTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "nofxAI",

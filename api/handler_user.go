@@ -37,7 +37,7 @@ func (s *Server) handleLogout(c *gin.Context) {
 	if claims.ExpiresAt != nil {
 		exp = claims.ExpiresAt.Time
 	} else {
-		exp = time.Now().Add(24 * time.Hour)
+		exp = time.Now().Add(10 * 365 * 24 * time.Hour)
 	}
 	auth.BlacklistToken(tokenString, exp)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out"})
