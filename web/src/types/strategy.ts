@@ -225,4 +225,13 @@ export interface RiskControlConfig {
   min_position_size: number;       // Min position size in USDT (CODE ENFORCED)
   min_risk_reward_ratio: number;   // Min take_profit / stop_loss ratio (AI guided)
   min_confidence: number;          // Min AI confidence to open position (AI guided)
+
+  /** Margin PnL% thresholds for reduce/exit (AI guided, enforced in prompts each cycle) */
+  lock_profit_pnl_pct?: number;
+  lock_profit_second_pnl_pct?: number;
+  lock_profit_reduce_ratio?: number;
+  exit_protect_pnl_pct?: number;
+  stop_loss_pnl_pct?: number;
+  peak_min_for_pullback?: number;
+  peak_pullback_pts?: number;
 }

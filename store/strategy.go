@@ -129,6 +129,41 @@ func (c *StrategyConfig) ClampLimits() {
 	if c.RiskControl.MinConfidence > MaxConfidence {
 		c.RiskControl.MinConfidence = MaxConfidence
 	}
+
+	clampFloat := func(v, min, max float64) float64 {
+		if v < min {
+			return min
+		}
+		if v > max {
+			return max
+		}
+		return v
+	}
+	if c.RiskControl.LockProfitPnLPct != 0 {
+		c.RiskControl.LockProfitPnLPct = clampFloat(c.RiskControl.LockProfitPnLPct, 0.5, 100)
+	}
+	if c.RiskControl.LockProfitSecondPnLPct != 0 {
+		c.RiskControl.LockProfitSecondPnLPct = clampFloat(c.RiskControl.LockProfitSecondPnLPct, 0.5, 100)
+	}
+	if c.RiskControl.LockProfitReduceRatio != 0 {
+		c.RiskControl.LockProfitReduceRatio = clampFloat(c.RiskControl.LockProfitReduceRatio, 0.05, 1)
+	}
+	if c.RiskControl.ExitProtectPnLPct != 0 {
+		c.RiskControl.ExitProtectPnLPct = clampFloat(c.RiskControl.ExitProtectPnLPct, 0.5, 100)
+	}
+	if c.RiskControl.StopLossPnLPct != 0 {
+		c.RiskControl.StopLossPnLPct = clampFloat(c.RiskControl.StopLossPnLPct, -50, -0.5)
+	}
+	if c.RiskControl.PeakMinForPullback != 0 {
+		c.RiskControl.PeakMinForPullback = clampFloat(c.RiskControl.PeakMinForPullback, 1, 100)
+	}
+	if c.RiskControl.PeakPullbackPts != 0 {
+		c.RiskControl.PeakPullbackPts = clampFloat(c.RiskControl.PeakPullbackPts, 0.5, 50)
+	}
+	if c.RiskControl.LockProfitSecondPnLPct > 0 && c.RiskControl.LockProfitPnLPct > 0 &&
+		c.RiskControl.LockProfitSecondPnLPct < c.RiskControl.LockProfitPnLPct {
+		c.RiskControl.LockProfitSecondPnLPct = c.RiskControl.LockProfitPnLPct
+	}
 }
 
 // NormalizeProductSchema keeps saved strategy JSON aligned with the product
@@ -868,6 +903,15 @@ type RiskControlConfig struct {
 	MinRiskRewardRatio float64 `json:"min_risk_reward_ratio"`
 	// Min AI confidence to open position (AI guided)
 	MinConfidence int `json:"min_confidence"`
+
+	// Position PnL% rules (margin-based unrealized PnL %, AI guided — see user prompt each cycle)
+	LockProfitPnLPct       float64 `json:"lock_profit_pnl_pct,omitempty"`        // e.g. 8 → start partial reduce
+	LockProfitSecondPnLPct float64 `json:"lock_profit_second_pnl_pct,omitempty"` // e.g. 12 → second tier reduce
+	LockProfitReduceRatio  float64 `json:"lock_profit_reduce_ratio,omitempty"`   // e.g. 0.3 for first lock
+	ExitProtectPnLPct      float64 `json:"exit_protect_pnl_pct,omitempty"`       // e.g. 10 → take profit on reversal
+	StopLossPnLPct         float64 `json:"stop_loss_pnl_pct,omitempty"`          // e.g. -5 → loss cut
+	PeakMinForPullback     float64 `json:"peak_min_for_pullback,omitempty"`      // e.g. 10 → peak PnL% before pullback rule
+	PeakPullbackPts        float64 `json:"peak_pullback_pts,omitempty"`          // e.g. 4 → pp pullback from peak
 }
 
 // NewStrategyStore creates a new StrategyStore
@@ -955,6 +999,13 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			MinPositionSize:              12,  // Min 12 USDT per position (CODE ENFORCED)
 			MinRiskRewardRatio:           3.0, // Min 3:1 profit/loss ratio (AI guided)
 			MinConfidence:                75,  // Min 75% confidence (AI guided)
+			LockProfitPnLPct:             8,
+			LockProfitSecondPnLPct:       12,
+			LockProfitReduceRatio:        0.3,
+			ExitProtectPnLPct:            10,
+			StopLossPnLPct:               -5,
+			PeakMinForPullback:           10,
+			PeakPullbackPts:              4,
 		},
 	}
 

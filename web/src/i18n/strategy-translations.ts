@@ -166,6 +166,26 @@ export const riskControl = {
   minPositionSizeDesc: { zh: 'USDT 最小名义价值', en: 'Minimum notional value in USDT', es: 'Valor mínimo en USDT' },
   minConfidence: { zh: '最小信心度', en: 'Min Confidence', es: 'Confianza Mínima' },
   minConfidenceDesc: { zh: 'AI 开仓信心度阈值', en: 'AI confidence threshold for entry', es: 'Umbral de confianza AI' },
+  positionPnLRules: { zh: '持仓盈利率规则', en: 'Position PnL% Rules', es: 'Reglas PnL% Posición' },
+  positionPnLRulesDesc: {
+    zh: '以当前持仓 Margin PnL%（相对保证金、含杠杆）作为减仓/平仓标准，每轮决策会注入实时对比',
+    en: 'Reduce/exit by current Margin PnL% (on margin, leverage included); compared live each cycle',
+    es: 'Reducir/salir por Margin PnL% actual',
+  },
+  lockProfitPnL: { zh: '锁盈线（第一档）', en: 'Lock Profit (Tier 1)', es: 'Lock Profit 1' },
+  lockProfitPnLDesc: { zh: 'Margin PnL% ≥ 此值时开始锁盈减仓', en: 'Start partial reduce when Margin PnL% ≥ this', es: 'Iniciar lock profit' },
+  lockProfitSecondPnL: { zh: '锁盈线（第二档）', en: 'Lock Profit (Tier 2)', es: 'Lock Profit 2' },
+  lockProfitSecondPnLDesc: { zh: 'Margin PnL% ≥ 此值时进一步减仓', en: 'Further reduce when Margin PnL% ≥ this', es: 'Segunda reducción' },
+  lockProfitReduceRatio: { zh: '首档减仓比例', en: 'First Reduce Ratio', es: 'Ratio Reducción 1' },
+  lockProfitReduceRatioDesc: { zh: '达到第一档锁盈时建议 close_ratio（0.3 = 减仓 30%）', en: 'Suggested close_ratio at tier 1 (0.3 = 30%)', es: 'close_ratio sugerido' },
+  exitProtectPnL: { zh: '保护利润平仓线', en: 'Protect Profit Exit', es: 'Salida Proteger' },
+  exitProtectPnLDesc: { zh: 'Margin PnL% ≥ 此值且反转信号 → 平仓', en: 'Close on reversal when Margin PnL% ≥ this', es: 'Cerrar con reversión' },
+  stopLossPnL: { zh: '止损线', en: 'Stop Loss PnL%', es: 'Stop Loss PnL%' },
+  stopLossPnLDesc: { zh: 'Margin PnL% ≤ 此值（负数）→ 止损平仓', en: 'Close when Margin PnL% ≤ this (negative)', es: 'Stop por PnL%' },
+  peakMinForPullback: { zh: '峰值回撤门槛', en: 'Peak Min for Pullback', es: 'Mín. Pico' },
+  peakMinForPullbackDesc: { zh: 'Peak PnL% 至少达到此值才启用峰值回撤规则', en: 'Peak PnL% must reach this before pullback rule applies', es: 'Mínimo peak' },
+  peakPullbackPts: { zh: '峰值回撤幅度', en: 'Peak Pullback (pp)', es: 'Pullback (pp)' },
+  peakPullbackPtsDesc: { zh: '从 Peak PnL% 回撤多少个百分点时减仓/平仓', en: 'Reduce/exit when drawdown from peak ≥ this many pp', es: 'Puntos desde pico' },
 };
 
 // ============================================================================

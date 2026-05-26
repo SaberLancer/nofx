@@ -278,10 +278,10 @@ func (r *Runner) convertPositions(priceMap map[string]float64) []kernel.Position
 	for _, pos := range positions {
 		price := priceMap[pos.Symbol]
 		pnl := unrealizedPnL(pos, price)
-		// Calculate P&L percentage based on entry notional (position cost)
+		// Margin PnL% = unrealized PnL / margin (matches live trader + status UI)
 		pnlPct := 0.0
-		if pos.Notional > 0 {
-			pnlPct = (pnl / pos.Notional) * 100
+		if pos.Margin > 0 {
+			pnlPct = (pnl / pos.Margin) * 100
 		}
 		list = append(list, kernel.PositionInfo{
 			Symbol:           pos.Symbol,

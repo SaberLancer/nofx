@@ -132,4 +132,12 @@ export function formatPercent(value: number | undefined | null, decimals = 2): s
   return value.toFixed(decimals)
 }
 
-export default { formatPrice, formatQuantity, formatPercent }
+/** 回测/历史 K 线时刻（UTC），避免用本地墙钟误导用户 */
+export function formatBacktestSimulationTime(ms: number | undefined | null): string | null {
+  if (ms === undefined || ms === null || !Number.isFinite(ms) || ms <= 0) {
+    return null
+  }
+  return new Date(ms).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
+}
+
+export default { formatPrice, formatQuantity, formatPercent, formatBacktestSimulationTime }

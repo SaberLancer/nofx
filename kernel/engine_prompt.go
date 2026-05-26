@@ -71,6 +71,8 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString(fmt.Sprintf("- Risk-Reward Ratio: ≥1:%.1f (take_profit / stop_loss)\n", riskControl.MinRiskRewardRatio))
 	sb.WriteString(fmt.Sprintf("- Min Confidence: ≥%d to open position\n\n", riskControl.MinConfidence))
 
+	AppendConfiguredPnLThresholds(&sb, riskControl, lang)
+
 	// Position sizing guidance
 	sb.WriteString("## Position Sizing Guidance\n")
 	sb.WriteString("Calculate `position_size_usd` based on your confidence and the Position Value Limits above:\n")
@@ -113,14 +115,18 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	} else {
 		if lang == LangChinese {
 			sb.WriteString("# 🪓 减仓标准（锁盈 / 降风险）\n\n")
-			sb.WriteString("阈值均以系统持仓 **PnL%**（相对保证金、已含杠杆）为准，峰值用 **Peak PnL%**；禁止用标的涨跌幅替代。\n")
-			sb.WriteString("- PnL% ≥ +8%：开始锁盈，可用 close_ratio 部分减仓\n")
-			sb.WriteString("- PnL% ≥ +12%：进一步减仓并收紧保护\n\n")
+			sb.WriteString("以**当前持仓 Margin PnL%** 为准（见上文「持仓盈利率风控」数值）。\n")
+			sb.WriteString(fmt.Sprintf("- Margin PnL%% ≥ %+.1f%%：开始锁盈（close_ratio 建议 %.2f）\n",
+				riskControl.EffectiveLockProfitPnLPct(), riskControl.EffectiveLockProfitReduceRatio()))
+			sb.WriteString(fmt.Sprintf("- Margin PnL%% ≥ %+.1f%%：进一步减仓并收紧保护\n\n",
+				riskControl.EffectiveLockProfitSecondPnLPct()))
 		} else {
 			sb.WriteString("# 🪓 Reduce Standards (Lock Profit / De-risk)\n\n")
-			sb.WriteString("Thresholds use system **PnL%** (return on margin, leverage included) and **Peak PnL%**; do not use raw price-change %.\n")
-			sb.WriteString("- PnL% ≥ +8%: start locking profit; partial reduce via close_ratio\n")
-			sb.WriteString("- PnL% ≥ +12%: further reduce and tighten protection\n\n")
+			sb.WriteString("Use **current position Margin PnL%** (see Position PnL% Risk Rules above).\n")
+			sb.WriteString(fmt.Sprintf("- Margin PnL%% ≥ %+.1f%%: start lock (close_ratio ~%.2f)\n",
+				riskControl.EffectiveLockProfitPnLPct(), riskControl.EffectiveLockProfitReduceRatio()))
+			sb.WriteString(fmt.Sprintf("- Margin PnL%% ≥ %+.1f%%: further reduce and tighten protection\n\n",
+				riskControl.EffectiveLockProfitSecondPnLPct()))
 		}
 	}
 
@@ -131,14 +137,20 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	} else {
 		if lang == LangChinese {
 			sb.WriteString("# 🧯 平仓标准（纪律性退出）\n\n")
-			sb.WriteString("触发条件的盈亏百分比均指系统 **PnL%**，不是标的涨跌幅。\n")
+			sb.WriteString("触发条件均指**当前持仓 Margin PnL%**。\n")
 			sb.WriteString("- 逻辑失效/反转确认 → 平仓\n")
-			sb.WriteString("- PnL% ≥ +10% 且出现反转信号 → 保护利润平仓\n\n")
+			sb.WriteString(fmt.Sprintf("- Margin PnL%% ≥ %+.1f%% 且出现反转信号 → 保护利润平仓\n",
+				riskControl.EffectiveExitProtectPnLPct()))
+			sb.WriteString(fmt.Sprintf("- Margin PnL%% ≤ %+.1f%% → 止损平仓\n\n",
+				riskControl.EffectiveStopLossPnLPct()))
 		} else {
 			sb.WriteString("# 🧯 Exit Standards (Disciplined Close)\n\n")
-			sb.WriteString("Triggers use system **PnL%**, not underlying price-change %.\n")
+			sb.WriteString("Triggers use **current Margin PnL%**.\n")
 			sb.WriteString("- Invalidation/reversal confirmed → close\n")
-			sb.WriteString("- PnL% ≥ +10% with reversal signals → take profit and close\n\n")
+			sb.WriteString(fmt.Sprintf("- Margin PnL%% ≥ %+.1f%% with reversal → protect profit, close\n",
+				riskControl.EffectiveExitProtectPnLPct()))
+			sb.WriteString(fmt.Sprintf("- Margin PnL%% ≤ %+.1f%% → stop loss close\n\n",
+				riskControl.EffectiveStopLossPnLPct()))
 		}
 	}
 
@@ -157,15 +169,15 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	if lang == LangChinese {
 		sb.WriteString("# 思维链中的持仓盈亏（强制）\n\n")
 		sb.WriteString("在 `<reasoning>` 中分析**已有持仓**的盈亏时：\n")
-		sb.WriteString("- **必须**使用上方「## Current Positions」每一行里给出的 **PnL** 百分比（与同一行中的「PnL Amount」「Leverage」配套，表示相对保证金的收益率，已体现杠杆）。\n")
-		sb.WriteString("- **禁止**仅用「(Current − Entry) / Entry」或类似公式自行估算盈亏百分比来替代或覆盖上述 **PnL**。\n")
-		sb.WriteString("- 若需要提及标的价格相对开仓价的变动，必须单独写明，例如「标的价格变动约 +x.xx%」，并明确说明**不得**与 **PnL** 百分比混为一谈。\n\n")
+		sb.WriteString("- **必须**使用「## Current Positions」每行的 **Margin PnL%**，以及下方「思维链必须引用的持仓 PnL%」中的数值（相对保证金、已含杠杆）。\n")
+		sb.WriteString("- **禁止**把标的价格涨跌幅 (Current−Entry)/Entry 写成「未实现盈亏」；二者常相差约杠杆倍数（如 5x 时 PnL% ≈ 价格变动% × 5）。\n")
+		sb.WriteString("- 若需提及标的价格变动，必须单独写「标的价格变动约 +x.xx%」，并标明**不是** Margin PnL%。\n\n")
 	} else {
 		sb.WriteString("# Chain-of-Thought: Position P&L (Mandatory)\n\n")
 		sb.WriteString("When analyzing **existing positions** inside `<reasoning>`:\n")
-		sb.WriteString("- You **MUST** use the **PnL** percentage printed on each line under `## Current Positions` (same line as `PnL Amount` and `Leverage` — return on margin used, leverage is already reflected).\n")
-		sb.WriteString("- You **MUST NOT** replace that **PnL** with your own percentage computed only from `(Current − Entry) / Entry` or similar raw price-change formulas.\n")
-		sb.WriteString("- If you mention raw underlying price movement vs entry, state it separately, e.g. \"underlying price change ~+x.xx%\", and make clear it is **not** the same as the system's **PnL** percentage.\n\n")
+		sb.WriteString("- You **MUST** use **Margin PnL%** on each `## Current Positions` line and in `## Mandatory PnL% for <reasoning>` (return on margin, leverage included).\n")
+		sb.WriteString("- You **MUST NOT** report raw `(Current − Entry) / Entry` as \"unrealized PnL\"; with 5x leverage, Margin PnL% is often ~5× the price-change %.\n")
+		sb.WriteString("- If you mention underlying price movement, label it separately (e.g. \"underlying price change ~+x.xx%\") and state it is **not** Margin PnL%.\n\n")
 	}
 
 	// 9. Output format
@@ -384,6 +396,8 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 		for i, pos := range ctx.Positions {
 			sb.WriteString(e.formatPositionInfo(i+1, pos, ctx))
 		}
+		AppendMandatoryPositionPnLQuotes(&sb, ctx.Positions, e.GetLanguage())
+		AppendPositionPnLActionGuide(&sb, ctx.Positions, e.config.RiskControl, e.GetLanguage())
 	} else {
 		sb.WriteString("Current Positions: None\n\n")
 	}
@@ -476,7 +490,7 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 		positionValue = -positionValue
 	}
 
-	sb.WriteString(fmt.Sprintf("%d. %s %s | Entry %.4f Current %.4f | Qty %.4f | Position Value %.2f USDT | PnL%+.2f%% | PnL Amount%+.2f USDT | Peak PnL%.2f%% | Leverage %dx | Margin %.0f | Liq Price %.4f%s\n\n",
+	sb.WriteString(fmt.Sprintf("%d. %s %s | Entry %.4f Current %.4f | Qty %.4f | Position Value %.2f USDT | Margin PnL%% %+.2f%% | PnL Amount %+.2f USDT | Peak PnL%% %.2f%% | Leverage %dx | Margin %.0f | Liq Price %.4f%s\n\n",
 		index, pos.Symbol, strings.ToUpper(pos.Side),
 		pos.EntryPrice, pos.MarkPrice, pos.Quantity, positionValue, pos.UnrealizedPnLPct, pos.UnrealizedPnL, pos.PeakPnLPct,
 		pos.Leverage, pos.MarginUsed, pos.LiquidationPrice, holdingDuration))

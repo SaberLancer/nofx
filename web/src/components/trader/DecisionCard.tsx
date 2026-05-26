@@ -1,7 +1,18 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { DecisionRecord, DecisionAction } from '../../types'
 import { t, type Language } from '../../i18n/translations'
 import { isPreDecisionSkipped } from '../../lib/decision'
+import {
+  fixReasoningPnLDisplay,
+  parseMarginPnLFromPrompt,
+} from '../../lib/fixReasoningPnL'
+import {
+  decisionTimePnLMap,
+  livePnLMap,
+  pnlDiffSignificant,
+  symbolsInDecision,
+  type LivePositionPnL,
+} from '../../lib/positionPnLCompare'
 
 interface DecisionCardProps {
   decision: DecisionRecord
@@ -9,6 +20,8 @@ interface DecisionCardProps {
   onSymbolClick?: (symbol: string) => void
   /** When set, matching symbol+action cards get a highlight ring. */
   highlightActionKey?: string
+  /** Real-time positions for对比「决策时刻 vs 当前」盈利率 */
+  livePositions?: LivePositionPnL[]
 }
 
 // Action type configuration
@@ -253,11 +266,35 @@ export function DecisionCard({
   language,
   onSymbolClick,
   highlightActionKey,
+  livePositions,
 }: DecisionCardProps) {
   const preDecisionSkipped = isPreDecisionSkipped(decision)
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
   const [showInputPrompt, setShowInputPrompt] = useState(false)
   const [showCoT, setShowCoT] = useState(false)
+
+  const displayCoTTrace = useMemo(() => {
+    if (!decision.cot_trace) return ''
+    const marginMap = parseMarginPnLFromPrompt(decision.input_prompt || '')
+    if (marginMap.size === 0) return decision.cot_trace
+    return fixReasoningPnLDisplay(decision.cot_trace, marginMap)
+  }, [decision.cot_trace, decision.input_prompt])
+
+  const pnlCompareRows = useMemo(() => {
+    if (!livePositions?.length) return []
+    const atMap = decisionTimePnLMap(decision.input_prompt || '')
+    const nowMap = livePnLMap(livePositions)
+    const symbols = symbolsInDecision(decision)
+    const rows: { symbol: string; atPct: number; livePct: number }[] = []
+    for (const sym of symbols) {
+      const livePct = nowMap.get(sym)
+      const atPct = atMap.get(sym)
+      if (livePct === undefined || atPct === undefined) continue
+      if (!pnlDiffSignificant(atPct, livePct)) continue
+      rows.push({ symbol: sym, atPct, livePct })
+    }
+    return rows
+  }, [decision, livePositions])
 
   // Copy text to clipboard
   const copyToClipboard = async (text: string, label: string) => {
@@ -307,6 +344,9 @@ export function DecisionCard({
             <div className="text-xs" style={{ color: '#848E9C' }}>
               {new Date(decision.timestamp).toLocaleString()}
             </div>
+            <div className="text-[10px] mt-0.5" style={{ color: '#5E6673' }}>
+              {t('decisionCard.snapshotHint', language)}
+            </div>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
@@ -335,6 +375,31 @@ export function DecisionCard({
           </div>
         </div>
       </div>
+
+      {pnlCompareRows.length > 0 ? (
+        <div
+          className="mb-4 px-3 py-2 rounded-lg text-xs space-y-1"
+          style={{
+            background: 'rgba(240, 185, 11, 0.08)',
+            border: '1px solid rgba(240, 185, 11, 0.25)',
+            color: '#F0B90B',
+          }}
+        >
+          <div className="font-medium">{t('decisionCard.pnlLagTitle', language)}</div>
+          {pnlCompareRows.map((row) => (
+            <div key={row.symbol} className="font-mono text-[11px]" style={{ color: '#EAECEF' }}>
+              {row.symbol.replace('USDT', '')}:{' '}
+              {t('decisionCard.pnlAtDecision', language, {
+                pct: `${row.atPct >= 0 ? '+' : ''}${row.atPct.toFixed(2)}%`,
+              })}{' '}
+              →{' '}
+              {t('decisionCard.pnlLiveNow', language, {
+                pct: `${row.livePct >= 0 ? '+' : ''}${row.livePct.toFixed(2)}%`,
+              })}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {/* Decision Actions - Beautiful Grid */}
       {decision.decisions && decision.decisions.length > 0 && (
@@ -503,7 +568,7 @@ export function DecisionCard({
                   color: '#EAECEF',
                 }}
               >
-                {decision.cot_trace}
+                {displayCoTTrace}
               </div>
             )}
           </div>

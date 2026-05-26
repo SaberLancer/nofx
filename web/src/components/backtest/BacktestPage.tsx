@@ -125,7 +125,7 @@ export function BacktestPage() {
   const { data: decisions } = useSWR<DecisionRecord[]>(
     selectedRunId ? ['bt-decisions', selectedRunId] : null,
     () => api.getBacktestDecisions(selectedRunId!, 30),
-    { refreshInterval: 5000 }
+    { refreshInterval: 2000 }
   )
 
   const selectedRun = runs.find((r) => r.run_id === selectedRunId)
@@ -566,6 +566,7 @@ export function BacktestPage() {
                       {viewTab === 'decisions' && (
                         <BacktestDecisionsTab
                           decisions={decisions}
+                          livePositions={status?.positions}
                           language={language}
                           tr={tr}
                         />

@@ -1,15 +1,21 @@
 import { motion } from 'framer-motion'
 import { DecisionCard } from '../trader/DecisionCard'
-import type { Language } from '../../i18n/translations'
-import type { DecisionRecord } from '../../types'
+import { t, type Language } from '../../i18n/translations'
+import type { BacktestPositionStatus, DecisionRecord } from '../../types'
 
 interface BacktestDecisionsTabProps {
   decisions: DecisionRecord[] | undefined
+  livePositions?: BacktestPositionStatus[]
   language: Language
   tr: (key: string) => string
 }
 
-export function BacktestDecisionsTab({ decisions, language, tr }: BacktestDecisionsTabProps) {
+export function BacktestDecisionsTab({
+  decisions,
+  livePositions,
+  language,
+  tr,
+}: BacktestDecisionsTabProps) {
   return (
     <motion.div
       key="decisions"
@@ -18,12 +24,16 @@ export function BacktestDecisionsTab({ decisions, language, tr }: BacktestDecisi
       exit={{ opacity: 0 }}
       className="space-y-3 max-h-[500px] overflow-y-auto"
     >
+      <p className="text-[10px] pb-1" style={{ color: '#5E6673' }}>
+        {t('backtestOverview.decisionsSnapshotHint', language)}
+      </p>
       {decisions && decisions.length > 0 ? (
         decisions.map((d) => (
           <DecisionCard
             key={`${d.cycle_number}-${d.timestamp}`}
             decision={d}
             language={language}
+            livePositions={livePositions}
           />
         ))
       ) : (

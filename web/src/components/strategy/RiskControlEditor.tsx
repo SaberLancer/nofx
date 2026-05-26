@@ -249,6 +249,98 @@ export function RiskControlEditor({
         </div>
       </div>
 
+      {/* Position PnL% rules */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Shield className="w-5 h-5" style={{ color: '#F0B90B' }} />
+          <h3 className="font-medium" style={{ color: '#EAECEF' }}>
+            {ts(riskControl.positionPnLRules, language)}
+          </h3>
+        </div>
+        <p className="text-xs mb-4" style={{ color: '#848E9C' }}>
+          {ts(riskControl.positionPnLRulesDesc, language)}
+        </p>
+
+        <div className="grid grid-cols-2 gap-4">
+          <NumberField
+            label={ts(riskControl.lockProfitPnL, language)}
+            desc={ts(riskControl.lockProfitPnLDesc, language)}
+            value={config.lock_profit_pnl_pct ?? 8}
+            onChange={(v) => updateField('lock_profit_pnl_pct', v)}
+            disabled={disabled}
+            min={0.5}
+            max={100}
+            step={0.5}
+            suffix="%"
+          />
+          <NumberField
+            label={ts(riskControl.lockProfitSecondPnL, language)}
+            desc={ts(riskControl.lockProfitSecondPnLDesc, language)}
+            value={config.lock_profit_second_pnl_pct ?? 12}
+            onChange={(v) => updateField('lock_profit_second_pnl_pct', v)}
+            disabled={disabled}
+            min={0.5}
+            max={100}
+            step={0.5}
+            suffix="%"
+          />
+          <NumberField
+            label={ts(riskControl.lockProfitReduceRatio, language)}
+            desc={ts(riskControl.lockProfitReduceRatioDesc, language)}
+            value={config.lock_profit_reduce_ratio ?? 0.3}
+            onChange={(v) => updateField('lock_profit_reduce_ratio', v)}
+            disabled={disabled}
+            min={0.05}
+            max={1}
+            step={0.05}
+          />
+          <NumberField
+            label={ts(riskControl.exitProtectPnL, language)}
+            desc={ts(riskControl.exitProtectPnLDesc, language)}
+            value={config.exit_protect_pnl_pct ?? 10}
+            onChange={(v) => updateField('exit_protect_pnl_pct', v)}
+            disabled={disabled}
+            min={0.5}
+            max={100}
+            step={0.5}
+            suffix="%"
+          />
+          <NumberField
+            label={ts(riskControl.stopLossPnL, language)}
+            desc={ts(riskControl.stopLossPnLDesc, language)}
+            value={config.stop_loss_pnl_pct ?? -5}
+            onChange={(v) => updateField('stop_loss_pnl_pct', v)}
+            disabled={disabled}
+            min={-50}
+            max={-0.5}
+            step={0.5}
+            suffix="%"
+          />
+          <NumberField
+            label={ts(riskControl.peakMinForPullback, language)}
+            desc={ts(riskControl.peakMinForPullbackDesc, language)}
+            value={config.peak_min_for_pullback ?? 10}
+            onChange={(v) => updateField('peak_min_for_pullback', v)}
+            disabled={disabled}
+            min={1}
+            max={100}
+            step={0.5}
+            suffix="%"
+          />
+          <NumberField
+            label={ts(riskControl.peakPullbackPts, language)}
+            desc={ts(riskControl.peakPullbackPtsDesc, language)}
+            value={config.peak_pullback_pts ?? 4}
+            onChange={(v) => updateField('peak_pullback_pts', v)}
+            disabled={disabled}
+            min={0.5}
+            max={50}
+            step={0.5}
+            suffix="pp"
+          />
+        </div>
+      </div>
+
       {/* Entry Requirements */}
       <div>
         <div className="flex items-center gap-2 mb-4">
@@ -310,6 +402,64 @@ export function RiskControlEditor({
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function NumberField({
+  label,
+  desc,
+  value,
+  onChange,
+  disabled,
+  min,
+  max,
+  step,
+  suffix,
+}: {
+  label: string
+  desc: string
+  value: number
+  onChange: (v: number) => void
+  disabled?: boolean
+  min: number
+  max: number
+  step: number
+  suffix?: string
+}) {
+  return (
+    <div
+      className="p-4 rounded-lg"
+      style={{ background: '#0B0E11', border: '1px solid #2B3139' }}
+    >
+      <label className="block text-sm mb-1" style={{ color: '#EAECEF' }}>
+        {label}
+      </label>
+      <p className="text-xs mb-2" style={{ color: '#848E9C' }}>
+        {desc}
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+          disabled={disabled}
+          min={min}
+          max={max}
+          step={step}
+          className="w-full px-3 py-2 rounded font-mono"
+          style={{
+            background: '#1E2329',
+            border: '1px solid #2B3139',
+            color: '#F0B90B',
+          }}
+        />
+        {suffix ? (
+          <span className="text-sm shrink-0" style={{ color: '#848E9C' }}>
+            {suffix}
+          </span>
+        ) : null}
       </div>
     </div>
   )

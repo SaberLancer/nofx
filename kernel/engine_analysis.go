@@ -132,6 +132,9 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 		decision.UserPrompt = userPrompt
 		decision.AIRequestDurationMs = aiCallDuration.Milliseconds()
 		decision.RawResponse = aiResponse
+		if decision.CoTTrace != "" && len(ctx.Positions) > 0 {
+			decision.CoTTrace = FixReasoningPositionPnLPct(decision.CoTTrace, ctx.Positions)
+		}
 	}
 
 	if err != nil {

@@ -677,13 +677,26 @@ export function TraderDashboardPage({
                                                         <td className="px-1 py-3 font-mono font-bold whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{(pos.quantity * pos.mark_price).toFixed(2)}</td>
                                                         <td className="px-1 py-3 font-mono whitespace-nowrap text-center text-nofx-gold hidden md:table-cell">{pos.leverage}x</td>
                                                         <td className="px-1 py-3 font-mono whitespace-nowrap text-right">
-                                                            <span
-                                                                className={`font-bold ${pos.unrealized_pnl >= 0 ? 'text-nofx-green shadow-nofx-green' : 'text-nofx-red shadow-nofx-red'}`}
-                                                                style={{ textShadow: pos.unrealized_pnl >= 0 ? '0 0 10px rgba(14,203,129,0.3)' : '0 0 10px rgba(246,70,93,0.3)' }}
+                                                            <div
+                                                                className={`font-bold ${pos.unrealized_pnl >= 0 ? 'text-nofx-green' : 'text-nofx-red'}`}
                                                             >
                                                                 {pos.unrealized_pnl >= 0 ? '+' : ''}
                                                                 {pos.unrealized_pnl.toFixed(2)}
-                                                            </span>
+                                                            </div>
+                                                            {pos.unrealized_pnl_pct !== undefined ? (
+                                                                <div
+                                                                    className="text-[10px] font-mono"
+                                                                    style={{
+                                                                        color:
+                                                                            pos.unrealized_pnl_pct >= 0
+                                                                                ? '#0ECB81'
+                                                                                : '#F6465D',
+                                                                    }}
+                                                                >
+                                                                    {pos.unrealized_pnl_pct >= 0 ? '+' : ''}
+                                                                    {pos.unrealized_pnl_pct.toFixed(2)}%
+                                                                </div>
+                                                            ) : null}
                                                         </td>
                                                         <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-muted hidden md:table-cell">{formatPrice(pos.liquidation_price)}</td>
                                                     </tr>
@@ -781,6 +794,9 @@ export function TraderDashboardPage({
                                         {t('lastCycles', language, { count: decisions.length })}
                                     </div>
                                 )}
+                                <p className="text-[10px] text-nofx-text-muted/80 mt-1 max-w-xs">
+                                    {t('decisionCard.snapshotHint', language)}
+                                </p>
                             </div>
                             {/* Limit Selector */}
                             <NofxSelect
@@ -798,7 +814,13 @@ export function TraderDashboardPage({
                         >
                             {decisions && decisions.length > 0 ? (
                                 decisions.map((decision, i) => (
-                                    <DecisionCard key={i} decision={decision} language={language} onSymbolClick={handleSymbolClick} />
+                                    <DecisionCard
+                                        key={i}
+                                        decision={decision}
+                                        language={language}
+                                        onSymbolClick={handleSymbolClick}
+                                        livePositions={positions}
+                                    />
                                 ))
                             ) : decisionsFailed ? (
                                 <div className="py-16 text-center text-nofx-text-muted opacity-60">
