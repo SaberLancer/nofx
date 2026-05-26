@@ -212,15 +212,15 @@ func loadEquityPointsDB(runID string) ([]EquityPoint, error) {
 
 func appendTradeEventDB(runID string, event TradeEvent) error {
 	_, err := persistenceDB.Exec(convertQuery(`
-		INSERT INTO backtest_trades (run_id, ts, symbol, action, side, qty, price, fee, slippage, order_value, realized_pnl, leverage, cycle, position_after, liquidation, note)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`), runID, event.Timestamp, event.Symbol, event.Action, event.Side, event.Quantity, event.Price, event.Fee, event.Slippage, event.OrderValue, event.RealizedPnL, event.Leverage, event.Cycle, event.PositionAfter, event.LiquidationFlag, event.Note)
+		INSERT INTO backtest_trades (run_id, ts, symbol, action, side, qty, price, fee, slippage, order_value, realized_pnl, leverage, cycle, position_after, liquidation, note, entry_price, exit_price, close_reason)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`), runID, event.Timestamp, event.Symbol, event.Action, event.Side, event.Quantity, event.Price, event.Fee, event.Slippage, event.OrderValue, event.RealizedPnL, event.Leverage, event.Cycle, event.PositionAfter, event.LiquidationFlag, event.Note, event.EntryPrice, event.ExitPrice, event.CloseReason)
 	return err
 }
 
 func loadTradeEventsDB(runID string) ([]TradeEvent, error) {
 	rows, err := persistenceDB.Query(convertQuery(`
-		SELECT ts, symbol, action, side, qty, price, fee, slippage, order_value, realized_pnl, leverage, cycle, position_after, liquidation, note
+		SELECT ts, symbol, action, side, qty, price, fee, slippage, order_value, realized_pnl, leverage, cycle, position_after, liquidation, note, entry_price, exit_price, close_reason
 		FROM backtest_trades WHERE run_id = ? ORDER BY ts ASC
 	`), runID)
 	if err != nil {
@@ -230,7 +230,7 @@ func loadTradeEventsDB(runID string) ([]TradeEvent, error) {
 	events := make([]TradeEvent, 0)
 	for rows.Next() {
 		var event TradeEvent
-		if err := rows.Scan(&event.Timestamp, &event.Symbol, &event.Action, &event.Side, &event.Quantity, &event.Price, &event.Fee, &event.Slippage, &event.OrderValue, &event.RealizedPnL, &event.Leverage, &event.Cycle, &event.PositionAfter, &event.LiquidationFlag, &event.Note); err != nil {
+		if err := rows.Scan(&event.Timestamp, &event.Symbol, &event.Action, &event.Side, &event.Quantity, &event.Price, &event.Fee, &event.Slippage, &event.OrderValue, &event.RealizedPnL, &event.Leverage, &event.Cycle, &event.PositionAfter, &event.LiquidationFlag, &event.Note, &event.EntryPrice, &event.ExitPrice, &event.CloseReason); err != nil {
 			return nil, err
 		}
 		events = append(events, event)

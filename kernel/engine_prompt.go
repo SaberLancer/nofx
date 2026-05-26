@@ -106,7 +106,43 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 		sb.WriteString(fmt.Sprintf("\nFeel free to use any effective analysis method, but **confidence ≥ %d** required to open positions; avoid low-quality behaviors such as single indicators, contradictory signals, sideways consolidation, reopening immediately after closing, etc.\n\n", riskControl.MinConfidence))
 	}
 
-	// 6. Decision process (editable)
+	// 6. Reduce standards (editable)
+	if promptSections.ReduceStandards != "" {
+		sb.WriteString(promptSections.ReduceStandards)
+		sb.WriteString("\n\n")
+	} else {
+		if lang == LangChinese {
+			sb.WriteString("# 🪓 减仓标准（锁盈 / 降风险）\n\n")
+			sb.WriteString("阈值均以系统持仓 **PnL%**（相对保证金、已含杠杆）为准，峰值用 **Peak PnL%**；禁止用标的涨跌幅替代。\n")
+			sb.WriteString("- PnL% ≥ +8%：开始锁盈，可用 close_ratio 部分减仓\n")
+			sb.WriteString("- PnL% ≥ +12%：进一步减仓并收紧保护\n\n")
+		} else {
+			sb.WriteString("# 🪓 Reduce Standards (Lock Profit / De-risk)\n\n")
+			sb.WriteString("Thresholds use system **PnL%** (return on margin, leverage included) and **Peak PnL%**; do not use raw price-change %.\n")
+			sb.WriteString("- PnL% ≥ +8%: start locking profit; partial reduce via close_ratio\n")
+			sb.WriteString("- PnL% ≥ +12%: further reduce and tighten protection\n\n")
+		}
+	}
+
+	// 7. Exit standards (editable)
+	if promptSections.ExitStandards != "" {
+		sb.WriteString(promptSections.ExitStandards)
+		sb.WriteString("\n\n")
+	} else {
+		if lang == LangChinese {
+			sb.WriteString("# 🧯 平仓标准（纪律性退出）\n\n")
+			sb.WriteString("触发条件的盈亏百分比均指系统 **PnL%**，不是标的涨跌幅。\n")
+			sb.WriteString("- 逻辑失效/反转确认 → 平仓\n")
+			sb.WriteString("- PnL% ≥ +10% 且出现反转信号 → 保护利润平仓\n\n")
+		} else {
+			sb.WriteString("# 🧯 Exit Standards (Disciplined Close)\n\n")
+			sb.WriteString("Triggers use system **PnL%**, not underlying price-change %.\n")
+			sb.WriteString("- Invalidation/reversal confirmed → close\n")
+			sb.WriteString("- PnL% ≥ +10% with reversal signals → take profit and close\n\n")
+		}
+	}
+
+	// 8. Decision process (editable)
 	if promptSections.DecisionProcess != "" {
 		sb.WriteString(promptSections.DecisionProcess)
 		sb.WriteString("\n\n")
@@ -117,7 +153,22 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 		sb.WriteString("3. Write chain of thought first, then output structured JSON\n\n")
 	}
 
-	// 7. Output format
+	// Reasoning: position P&L must match system data (margin-based %), not raw price change
+	if lang == LangChinese {
+		sb.WriteString("# 思维链中的持仓盈亏（强制）\n\n")
+		sb.WriteString("在 `<reasoning>` 中分析**已有持仓**的盈亏时：\n")
+		sb.WriteString("- **必须**使用上方「## Current Positions」每一行里给出的 **PnL** 百分比（与同一行中的「PnL Amount」「Leverage」配套，表示相对保证金的收益率，已体现杠杆）。\n")
+		sb.WriteString("- **禁止**仅用「(Current − Entry) / Entry」或类似公式自行估算盈亏百分比来替代或覆盖上述 **PnL**。\n")
+		sb.WriteString("- 若需要提及标的价格相对开仓价的变动，必须单独写明，例如「标的价格变动约 +x.xx%」，并明确说明**不得**与 **PnL** 百分比混为一谈。\n\n")
+	} else {
+		sb.WriteString("# Chain-of-Thought: Position P&L (Mandatory)\n\n")
+		sb.WriteString("When analyzing **existing positions** inside `<reasoning>`:\n")
+		sb.WriteString("- You **MUST** use the **PnL** percentage printed on each line under `## Current Positions` (same line as `PnL Amount` and `Leverage` — return on margin used, leverage is already reflected).\n")
+		sb.WriteString("- You **MUST NOT** replace that **PnL** with your own percentage computed only from `(Current − Entry) / Entry` or similar raw price-change formulas.\n")
+		sb.WriteString("- If you mention raw underlying price movement vs entry, state it separately, e.g. \"underlying price change ~+x.xx%\", and make clear it is **not** the same as the system's **PnL** percentage.\n\n")
+	}
+
+	// 9. Output format
 	sb.WriteString("# Output Format (Strictly Follow)\n\n")
 	sb.WriteString("**Must use XML tags <reasoning> and <decision> to separate chain of thought and decision JSON, avoiding parsing errors**\n\n")
 	sb.WriteString("## Format Requirements\n\n")
@@ -132,11 +183,12 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	examplePositionSize := accountEquity * btcEthPosValueRatio
 	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300},\n",
 		riskControl.BTCETHMaxLeverage, examplePositionSize))
-	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\"}\n")
+	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\", \"close_ratio\": 0.5}\n")
 	sb.WriteString("]\n```\n")
 	sb.WriteString("</decision>\n\n")
 	sb.WriteString("## Field Description\n\n")
 	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | hold | wait\n")
+	sb.WriteString("- Optional for closing: `close_ratio` (0-1). If omitted or ≥1, close all.\n")
 	sb.WriteString(fmt.Sprintf("- `confidence`: 0-100 (opening recommended ≥ %d)\n", riskControl.MinConfidence))
 	sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
 	sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")

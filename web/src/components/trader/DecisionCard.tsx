@@ -98,6 +98,20 @@ function ActionCard({ action, language, onSymbolClick }: { action: DecisionActio
         </div>
       </div>
 
+      {isOpen && action.unprotected && (
+        <div
+          className="mt-2 px-3 py-2 rounded text-xs font-medium"
+          style={{
+            background: 'rgba(246, 70, 93, 0.12)',
+            color: '#F6465D',
+            border: '1px solid rgba(246, 70, 93, 0.35)',
+          }}
+        >
+          {t('unprotectedPosition', language)}
+          {action.protection_note ? `: ${action.protection_note}` : ''}
+        </div>
+      )}
+
       {/* Trading Details Grid */}
       {isOpen && (
         <div className="grid grid-cols-4 gap-3 mt-3 pt-3" style={{ borderTop: '1px solid #2B3139' }}>

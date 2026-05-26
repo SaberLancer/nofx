@@ -221,7 +221,7 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		// Calculate P&L percentage (based on margin)
 		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
-		result = append(result, map[string]interface{}{
+		item := map[string]interface{}{
 			"symbol":             symbol,
 			"side":               side,
 			"entry_price":        entryPrice,
@@ -232,7 +232,18 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 			"unrealized_pnl_pct": pnlPct,
 			"liquidation_price":  liquidationPrice,
 			"margin_used":        marginUsed,
-		})
+		}
+		if info, ok := at.isUnprotected(symbol, side); ok {
+			item["unprotected"] = true
+			item["protection_note"] = info.LastError
+			if info.StopLoss > 0 {
+				item["stop_loss"] = info.StopLoss
+			}
+			if info.TakeProfit > 0 {
+				item["take_profit"] = info.TakeProfit
+			}
+		}
+		result = append(result, item)
 	}
 
 	return result, nil

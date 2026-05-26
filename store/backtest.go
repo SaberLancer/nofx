@@ -179,6 +179,9 @@ type BacktestTrade struct {
 	PositionAfter float64 `gorm:"column:position_after;default:0"`
 	Liquidation   bool    `gorm:"column:liquidation;default:false"`
 	Note          string  `gorm:"column:note;default:''"`
+	EntryPrice    float64 `gorm:"column:entry_price;default:0"`
+	ExitPrice     float64 `gorm:"column:exit_price;default:0"`
+	CloseReason   string  `gorm:"column:close_reason;default:''"`
 }
 
 func (BacktestTrade) TableName() string {

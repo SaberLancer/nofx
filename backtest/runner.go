@@ -310,6 +310,8 @@ func (r *Runner) StatusPayload() StatusPayload {
 			UnrealizedPnL:    unrealizedPnL,
 			UnrealizedPnLPct: pnlPct,
 			MarginUsed:       pos.MarginUsed,
+			StopLoss:         pos.StopLoss,
+			TakeProfit:       pos.TakeProfit,
 		})
 	}
 

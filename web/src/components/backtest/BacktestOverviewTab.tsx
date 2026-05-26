@@ -222,13 +222,23 @@ export function PositionsDisplay({ positions, language }: PositionsDisplayProps)
               </div>
 
               <div className="text-right">
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-2 text-xs flex-wrap justify-end">
                   <span style={{ color: '#848E9C' }}>
                     {t('backtestOverview.entry', language)}: ${pos.entry_price.toFixed(2)}
                   </span>
                   <span style={{ color: '#EAECEF' }}>
                     {t('backtestOverview.mark', language)}: ${pos.mark_price.toFixed(2)}
                   </span>
+                  {pos.stop_loss && pos.stop_loss > 0 ? (
+                    <span style={{ color: '#F6465D' }}>
+                      SL: ${pos.stop_loss.toFixed(2)}
+                    </span>
+                  ) : null}
+                  {pos.take_profit && pos.take_profit > 0 ? (
+                    <span style={{ color: '#0ECB81' }}>
+                      TP: ${pos.take_profit.toFixed(2)}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex items-center justify-end gap-1.5 mt-0.5">
                   <span className="font-mono font-bold" style={{ color: pnlColor }}>

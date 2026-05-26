@@ -125,6 +125,10 @@ type Decision struct {
 	StopLoss        float64 `json:"stop_loss,omitempty"`
 	TakeProfit      float64 `json:"take_profit,omitempty"`
 
+	// Closing parameters
+	// Optional partial close ratio (0-1). When omitted or >=1, close all.
+	CloseRatio float64 `json:"close_ratio,omitempty"`
+
 	// Grid trading parameters
 	Price      float64 `json:"price,omitempty"`       // Limit order price (for grid)
 	Quantity   float64 `json:"quantity,omitempty"`    // Order quantity (for grid)

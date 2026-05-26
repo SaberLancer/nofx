@@ -729,6 +729,10 @@ type PromptSectionsConfig struct {
 	TradingFrequency string `json:"trading_frequency,omitempty"`
 	// entry standards
 	EntryStandards string `json:"entry_standards,omitempty"`
+	// reduce position standards (lock profits / de-risk while holding)
+	ReduceStandards string `json:"reduce_standards,omitempty"`
+	// exit/close position standards (hard exit discipline)
+	ExitStandards string `json:"exit_standards,omitempty"`
 	// decision process
 	DecisionProcess string `json:"decision_process,omitempty"`
 }
@@ -968,11 +972,46 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			EntryStandards: `# 🎯 入场标准（严格）
 
 只在多个信号共振时入场。自由使用任何有效的分析方法，避免单一指标、信号矛盾、横盘震荡、或平仓后立即重新开仓等低质量行为。`,
+			ReduceStandards: `# 🪓 减仓标准（锁盈 / 降风险）
+
+当持仓出现明显浮盈或波动加剧时，优先“锁定已有利润”，避免利润回吐。你可以通过 **close_ratio** 做部分减仓（例如 0.3=减仓 30%）。
+
+## 盈亏阈值口径（强制）
+
+本段落中所有「+x%」「-x%」阈值，均指系统「当前持仓」里的 **PnL%（未实现盈亏百分比，相对保证金、已含杠杆）**；峰值相关规则使用同一行的 **Peak PnL%**。**禁止**用标的涨跌幅 (Current-Entry)/Entry 替代 PnL% 来判断是否触发减仓。
+
+- PnL% 达到 +8%：开始锁盈，建议减仓 30%（close_ratio=0.3）或上调止损到保本/小幅盈利
+- PnL% 达到 +12%：建议再减仓 30%-50%（close_ratio=0.3~0.5），剩余仓位用更紧的止损保护
+- 峰值回撤锁盈：若 Peak PnL%（H）≥ +10%，且当前 PnL% 较峰值回撤 ≥ 4 个百分点 → 立即减仓/平仓；H ≥ +15% 且回撤 ≥ 6 个百分点 → 立即平仓
+- 明显动量衰减/遇到关键阻力位：优先减仓锁盈而不是继续扛回撤
+
+（阈值可由用户在此段落自行调整）`,
+			ExitStandards: `# 🧯 平仓标准（纪律性退出）
+
+当“持仓逻辑失效”或“回撤风险超过收益空间”时，必须果断退出，避免从大幅浮盈回撤到亏损。
+
+## 盈亏阈值口径（强制）
+
+本段落中触发「保护利润」「亏损控制」等条件的百分比，均指系统 **PnL%（未实现盈亏百分比，相对保证金、已含杠杆）**，不是标的涨跌幅。
+
+- 触发无效/反转：趋势反转、关键支撑/阻力被有效跌破/突破、动量反向并确认 → 立即平仓
+- 保护利润：PnL% ≥ +10% 且出现反转信号 → 立即平仓（不要等待）
+- 亏损控制：若 PnL% 达到策略允许亏损上限（例如 -3%~-6%）且看不到快速修复迹象 → 平仓止损
+- 时间止盈/止损：持仓超过 N 个周期仍无扩展（横盘/来回扫）→ 优先平仓释放资金
+
+（阈值与规则可由用户在此段落自行调整）`,
 			DecisionProcess: `# 📋 决策流程
 
 1. 检查持仓 → 是否止盈/止损
 2. 扫描候选币种 + 多时间框架 → 是否存在强信号
-3. 先写思维链，再输出结构化JSON`,
+3. 先写思维链，再输出结构化JSON
+
+## 思维链中的持仓盈亏（强制）
+
+在“思维链/分析”中描述**已有持仓**的盈亏时：
+- **必须**使用系统提供的 **PnL%（未实现盈亏百分比）**，它已体现杠杆影响（相对保证金收益率），并与同一行的 PnL Amount/Leverage 一致。
+- **禁止**仅用「(Current - Entry) / Entry」或类似公式自行估算盈亏百分比来替代或覆盖 **PnL%**。
+- 若要提及标的价格相对开仓价的变动，请单独写明「标的价格变动约 x.xx%」，并明确说明它**不同于**系统的 **PnL%**。`,
 		}
 	} else {
 		config.PromptSections = PromptSectionsConfig{
@@ -988,11 +1027,46 @@ If you find yourself trading every cycle → standards are too low; if closing p
 			EntryStandards: `# 🎯 Entry Standards (Strict)
 
 Only enter positions when multiple signals resonate. Freely use any effective analysis methods, avoid low-quality behaviors such as single indicators, contradictory signals, sideways oscillation, or immediately restarting after closing positions.`,
+			ReduceStandards: `# 🪓 Reduce Standards (Lock Profit / De-risk)
+
+When a position has meaningful profit or volatility increases, prioritize locking in gains to avoid giving back profits. You may use **close_ratio** for partial reduction (e.g., 0.3 = reduce 30%).
+
+## P&L Threshold Basis (Mandatory)
+
+All +x% / -x% thresholds in this section mean the system **PnL% (unrealized P&L % on margin, leverage included)** from Current Positions; peak rules use **Peak PnL%** on the same line. Do **not** use raw (Current-Entry)/Entry price change instead of PnL%.
+
+- PnL% ≥ +8%: start locking profit, reduce ~30% (close_ratio=0.3) or move stop to breakeven / small profit
+- PnL% ≥ +12%: reduce another 30%-50% (close_ratio=0.3~0.5), protect remainder with tighter stop
+- Peak pullback: if Peak PnL% (H) ≥ +10% and current PnL% pulls back ≥ 4 percentage points from peak → reduce/exit; H ≥ +15% and pullback ≥ 6 points → exit immediately
+- Momentum weakening / major resistance: prefer reducing to lock gains rather than riding a large pullback
+
+(Thresholds are user-tunable in this section)`,
+			ExitStandards: `# 🧯 Exit Standards (Disciplined Close)
+
+When the trade thesis is invalidated or drawdown risk exceeds remaining upside, exit decisively to prevent profits from giving back.
+
+## P&L Threshold Basis (Mandatory)
+
+Profit/loss triggers below use system **PnL% (unrealized P&L % on margin, leverage included)**, not underlying price change %.
+
+- Invalidation / reversal confirmed: trend reversal, key S/R broken, momentum flips and confirms → close immediately
+- Profit protection: PnL% ≥ +10% and reversal signals appear → close immediately (do not wait)
+- Loss control: PnL% reaches allowed loss range (e.g., -3%~-6%) without quick recovery → stop-loss and close
+- Time stop: holding for N bars with no progress (chop) → close to free capital
+
+(Thresholds and rules are user-tunable in this section)`,
 			DecisionProcess: `# 📋 Decision Process
 
 1. Check positions → whether to take profit/stop loss
 2. Scan candidate coins + multi-timeframe → whether strong signals exist
-3. Write chain of thought first, then output structured JSON`,
+3. Write chain of thought first, then output structured JSON
+
+## Position P&L in Chain-of-Thought (Mandatory)
+
+When describing **existing positions** P&L in reasoning/analysis:
+- You **MUST** use the system-provided **PnL% (unrealized PnL percentage)** which already reflects leverage (return on margin), and matches the same-line PnL Amount/Leverage.
+- You **MUST NOT** replace/override PnL% with a percentage computed only from (Current - Entry) / Entry or other raw price-change formulas.
+- If you mention underlying price move vs entry, state it separately (e.g., \"underlying price change ~x.xx%\"), and explicitly note it is **not** the same as the system PnL%.`,
 		}
 	}
 
@@ -1262,6 +1336,8 @@ func (c *StrategyConfig) EstimateTokens() TokenEstimate {
 	baseChars += len(c.PromptSections.RoleDefinition)
 	baseChars += len(c.PromptSections.TradingFrequency)
 	baseChars += len(c.PromptSections.EntryStandards)
+	baseChars += len(c.PromptSections.ReduceStandards)
+	baseChars += len(c.PromptSections.ExitStandards)
 	baseChars += len(c.PromptSections.DecisionProcess)
 	baseChars += len(c.CustomPrompt)
 

@@ -16,7 +16,10 @@ const selectStyle: CSSProperties = {
   color: '#EAECEF',
 }
 
-function formatActionLabel(action: string): string {
+function formatActionLabel(action: string, closeReason?: string): string {
+  if (closeReason === 'stop_loss') return 'STOP LOSS'
+  if (closeReason === 'take_profit') return 'TAKE PROFIT'
+  if (closeReason === 'liquidation') return 'LIQUIDATED'
   return action.replace(/_/g, ' ').toUpperCase()
 }
 
@@ -25,9 +28,13 @@ function matchesActionFilter(trade: BacktestTradeEvent, filter: ActionFilter): b
     case 'open':
       return trade.action.includes('open')
     case 'close':
-      return trade.action.includes('close')
+      return (
+        trade.action.includes('close') &&
+        trade.close_reason !== 'stop_loss' &&
+        trade.close_reason !== 'take_profit'
+      )
     case 'liquidated':
-      return trade.liquidation || trade.action === 'liquidated'
+      return trade.liquidation || trade.action === 'liquidated' || trade.close_reason === 'liquidation'
     default:
       return true
   }
@@ -136,7 +143,10 @@ function TradeTable({
                 {t('backtestTrades.colQty', language)}
               </th>
               <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
-                {t('backtestTrades.colPrice', language)}
+                {t('backtestTrades.colEntry', language)}
+              </th>
+              <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
+                {t('backtestTrades.colExit', language)}
               </th>
               <th className="px-3 py-2 text-right whitespace-nowrap">
                 <SortablePnlHeader
@@ -153,6 +163,18 @@ function TradeTable({
           <tbody>
             {trades.map((trade, idx) => {
               const isOpen = trade.action.includes('open')
+              const entryPx =
+                trade.entry_price && trade.entry_price > 0
+                  ? trade.entry_price
+                  : isOpen
+                    ? trade.price
+                    : 0
+              const exitPx =
+                trade.exit_price && trade.exit_price > 0
+                  ? trade.exit_price
+                  : !isOpen
+                    ? trade.price
+                    : 0
               const pnlColor =
                 trade.realized_pnl >= 0 ? '#0ECB81' : '#F6465D'
               const rowBg =
@@ -186,7 +208,7 @@ function TradeTable({
                         color: isOpen ? '#0ECB81' : '#F6465D',
                       }}
                     >
-                      {formatActionLabel(trade.action)}
+                      {formatActionLabel(trade.action, trade.close_reason)}
                     </span>
                     {trade.leverage ? (
                       <span
@@ -207,7 +229,13 @@ function TradeTable({
                     className="px-3 py-2 font-mono text-right whitespace-nowrap"
                     style={{ color: '#EAECEF' }}
                   >
-                    ${trade.price.toFixed(2)}
+                    {entryPx > 0 ? `$${entryPx.toFixed(2)}` : '—'}
+                  </td>
+                  <td
+                    className="px-3 py-2 font-mono text-right whitespace-nowrap"
+                    style={{ color: '#EAECEF' }}
+                  >
+                    {exitPx > 0 ? `$${exitPx.toFixed(2)}` : '—'}
                   </td>
                   <td
                     className="px-3 py-2 font-mono text-right font-bold whitespace-nowrap"

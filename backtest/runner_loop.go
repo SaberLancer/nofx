@@ -190,6 +190,22 @@ func (r *Runner) stepOnce() error {
 		cycleForLog = callCount
 	}
 
+	slTpEvents, slTpNote, err := r.checkStopLossTakeProfit(ts, priceMap, cycleForLog)
+	if err != nil {
+		if record != nil {
+			record.Success = false
+			record.ErrorMessage = err.Error()
+			_ = r.logDecision(record)
+		}
+		return err
+	}
+	if len(slTpEvents) > 0 {
+		tradeEvents = append(tradeEvents, slTpEvents...)
+		if record != nil && slTpNote != "" {
+			execLog = append(execLog, fmt.Sprintf("✓ SL/TP triggered: %s", slTpNote))
+		}
+	}
+
 	liquidationEvents, liquidationNote, err := r.checkLiquidation(ts, priceMap, cycleForLog)
 	if err != nil {
 		if record != nil {
@@ -462,6 +478,8 @@ func (r *Runner) updateState(ts int64, equity, unrealized, marginUsed float64, p
 			MarginUsed:       pos.Margin,
 			OpenTime:         pos.OpenTime,
 			AccumulatedFee:   pos.AccumulatedFee,
+			StopLoss:         pos.StopLoss,
+			TakeProfit:       pos.TakeProfit,
 		}
 	}
 

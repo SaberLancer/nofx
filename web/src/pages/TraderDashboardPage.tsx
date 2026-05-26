@@ -628,7 +628,22 @@ export function TraderDashboardPage({
                                                         }}
                                                     >
                                                         <td className="px-1 py-3 font-mono font-semibold whitespace-nowrap text-left text-nofx-text-main group-hover/row:text-white transition-colors">
-                                                            {pos.symbol}
+                                                            <span className="inline-flex items-center gap-1.5 flex-wrap">
+                                                                {pos.symbol}
+                                                                {pos.unprotected ? (
+                                                                    <span
+                                                                        className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+                                                                        title={pos.protection_note || t('unprotectedPosition', language)}
+                                                                        style={{
+                                                                            background: 'rgba(246, 70, 93, 0.15)',
+                                                                            color: '#F6465D',
+                                                                            border: '1px solid rgba(246, 70, 93, 0.35)',
+                                                                        }}
+                                                                    >
+                                                                        {t('unprotectedPosition', language)}
+                                                                    </span>
+                                                                ) : null}
+                                                            </span>
                                                         </td>
                                                         <td className="px-1 py-3 whitespace-nowrap text-center">
                                                             <span

@@ -56,6 +56,9 @@ func (at *AutoTrader) runCycle() error {
 		logger.Info("📅 Daily P&L reset")
 	}
 
+	// Retry attaching SL/TP for positions flagged as unprotected
+	at.retryUnprotectedPositions()
+
 	// 4. Collect trading context
 	ctx, err := at.buildTradingContext()
 	if err != nil {

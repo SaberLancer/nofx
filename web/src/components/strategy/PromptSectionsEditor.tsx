@@ -34,6 +34,34 @@ const defaultSections: PromptSectionsConfig = {
 
 避免：单一指标、信号矛盾、横盘震荡、刚平仓即重启。`,
 
+  reduce_standards: `# 🪓 减仓标准（锁盈 / 降风险）
+
+当持仓出现明显浮盈或波动加剧时，优先锁定利润，避免回吐。你可以通过 close_ratio 做部分减仓（例如 0.3=减仓 30%）。
+
+## 盈亏阈值口径（强制）
+
+本段落中所有「+x%」「-x%」阈值，均指系统「当前持仓」里的 **PnL%（未实现盈亏百分比，相对保证金、已含杠杆）**；峰值规则使用 **Peak PnL%**。**禁止**用标的涨跌幅 (Current-Entry)/Entry 替代 PnL% 判断是否触发减仓。
+
+- PnL% 达到 +8%：开始锁盈，建议减仓 30% 或上调止损到保本/小幅盈利
+- PnL% 达到 +12%：建议再减仓 30%-50%，剩余仓位用更紧止损保护
+- 峰值回撤：Peak PnL%（H）≥+10% 且当前 PnL% 较峰值回撤≥4 个百分点 → 立即减仓/平仓；H≥+15% 回撤≥6 个百分点 → 立即平仓
+
+（阈值可由用户自行调整）`,
+
+  exit_standards: `# 🧯 平仓标准（纪律性退出）
+
+当持仓逻辑失效或回撤风险超过收益空间时，必须果断退出，避免从大幅浮盈回撤到亏损。
+
+## 盈亏阈值口径（强制）
+
+本段落触发条件的百分比均指系统 **PnL%（未实现盈亏百分比，相对保证金、已含杠杆）**，不是标的涨跌幅。
+
+- 触发无效/反转：趋势反转、关键位破坏、动量反向确认 → 立即平仓
+- 保护利润：PnL% ≥ +10% 且出现反转信号 → 立即平仓
+- 亏损控制：PnL% 达到允许亏损上限（例如 -3%~-6%）且无快速修复迹象 → 平仓止损
+
+（阈值与规则可由用户自行调整）`,
+
   decision_process: `# 📋 决策流程
 
 1. 检查持仓 → 是否该止盈/止损
@@ -52,6 +80,8 @@ export function PromptSectionsEditor({
     role_definition: false,
     trading_frequency: false,
     entry_standards: false,
+    reduce_standards: false,
+    exit_standards: false,
     decision_process: false,
   })
 
@@ -59,6 +89,8 @@ export function PromptSectionsEditor({
     { key: 'role_definition', label: ts(promptSectionsI18n.roleDefinition, language), desc: ts(promptSectionsI18n.roleDefinitionDesc, language) },
     { key: 'trading_frequency', label: ts(promptSectionsI18n.tradingFrequency, language), desc: ts(promptSectionsI18n.tradingFrequencyDesc, language) },
     { key: 'entry_standards', label: ts(promptSectionsI18n.entryStandards, language), desc: ts(promptSectionsI18n.entryStandardsDesc, language) },
+    { key: 'reduce_standards', label: ts(promptSectionsI18n.reduceStandards, language), desc: ts(promptSectionsI18n.reduceStandardsDesc, language) },
+    { key: 'exit_standards', label: ts(promptSectionsI18n.exitStandards, language), desc: ts(promptSectionsI18n.exitStandardsDesc, language) },
     { key: 'decision_process', label: ts(promptSectionsI18n.decisionProcess, language), desc: ts(promptSectionsI18n.decisionProcessDesc, language) },
   ]
 

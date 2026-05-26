@@ -38,6 +38,8 @@ export interface BacktestPositionStatus {
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
   margin_used: number;
+  stop_loss?: number;
+  take_profit?: number;
 }
 
 export interface BacktestStatusPayload {
@@ -73,6 +75,9 @@ export interface BacktestTradeEvent {
   side?: string;
   qty: number;
   price: number;
+  entry_price?: number;
+  exit_price?: number;
+  close_reason?: string;
   fee: number;
   slippage: number;
   order_value: number;

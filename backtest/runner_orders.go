@@ -34,10 +34,14 @@ func (r *Runner) executeDecision(dec kernel.Decision, priceMap map[string]float6
 
 	usedLeverage := r.resolveLeverage(dec.Leverage, symbol)
 	actionRecord := store.DecisionAction{
-		Action:    dec.Action,
-		Symbol:    symbol,
-		Leverage:  usedLeverage,
-		Timestamp: time.UnixMilli(ts).UTC(),
+		Action:     dec.Action,
+		Symbol:     symbol,
+		Leverage:   usedLeverage,
+		StopLoss:   dec.StopLoss,
+		TakeProfit: dec.TakeProfit,
+		Confidence: dec.Confidence,
+		Reasoning:  dec.Reasoning,
+		Timestamp:  time.UnixMilli(ts).UTC(),
 	}
 
 	if priceMap == nil {
@@ -60,6 +64,7 @@ func (r *Runner) executeDecision(dec kernel.Decision, priceMap map[string]float6
 		if err != nil {
 			return actionRecord, nil, "", err
 		}
+		r.account.SetProtection(symbol, "long", dec.StopLoss, dec.TakeProfit)
 		actionRecord.Quantity = qty
 		actionRecord.Price = execPrice
 		actionRecord.Leverage = pos.Leverage
@@ -70,6 +75,7 @@ func (r *Runner) executeDecision(dec kernel.Decision, priceMap map[string]float6
 			Side:          "long",
 			Quantity:      qty,
 			Price:         execPrice,
+			EntryPrice:    execPrice,
 			Fee:           fee,
 			Slippage:      execPrice - basePrice,
 			OrderValue:    execPrice * qty,
@@ -89,6 +95,7 @@ func (r *Runner) executeDecision(dec kernel.Decision, priceMap map[string]float6
 		if err != nil {
 			return actionRecord, nil, "", err
 		}
+		r.account.SetProtection(symbol, "short", dec.StopLoss, dec.TakeProfit)
 		actionRecord.Quantity = qty
 		actionRecord.Price = execPrice
 		actionRecord.Leverage = pos.Leverage
@@ -99,6 +106,7 @@ func (r *Runner) executeDecision(dec kernel.Decision, priceMap map[string]float6
 			Side:          "short",
 			Quantity:      qty,
 			Price:         execPrice,
+			EntryPrice:    execPrice,
 			Fee:           fee,
 			Slippage:      basePrice - execPrice,
 			OrderValue:    execPrice * qty,
@@ -114,29 +122,13 @@ func (r *Runner) executeDecision(dec kernel.Decision, priceMap map[string]float6
 		if qty <= 0 {
 			return actionRecord, nil, "", fmt.Errorf("invalid close qty")
 		}
-		posLev := r.account.positionLeverage(symbol, "long")
-		realized, fee, execPrice, err := r.account.Close(symbol, "long", qty, fillPrice)
+		trade, err := r.closePositionAt(symbol, "long", qty, fillPrice, basePrice, ts, cycle, "manual")
 		if err != nil {
 			return actionRecord, nil, "", err
 		}
 		actionRecord.Quantity = qty
-		actionRecord.Price = execPrice
-		actionRecord.Leverage = posLev
-		trade := TradeEvent{
-			Timestamp:     ts,
-			Symbol:        symbol,
-			Action:        dec.Action,
-			Side:          "long",
-			Quantity:      qty,
-			Price:         execPrice,
-			Fee:           fee,
-			Slippage:      basePrice - execPrice,
-			OrderValue:    execPrice * qty,
-			RealizedPnL:   realized - fee,
-			Leverage:      posLev,
-			Cycle:         cycle,
-			PositionAfter: r.remainingPosition(symbol, "long"),
-		}
+		actionRecord.Price = trade.ExitPrice
+		actionRecord.Leverage = trade.Leverage
 		return actionRecord, []TradeEvent{trade}, "", nil
 
 	case "close_short":
@@ -144,29 +136,13 @@ func (r *Runner) executeDecision(dec kernel.Decision, priceMap map[string]float6
 		if qty <= 0 {
 			return actionRecord, nil, "", fmt.Errorf("invalid close qty")
 		}
-		posLev := r.account.positionLeverage(symbol, "short")
-		realized, fee, execPrice, err := r.account.Close(symbol, "short", qty, fillPrice)
+		trade, err := r.closePositionAt(symbol, "short", qty, fillPrice, basePrice, ts, cycle, "manual")
 		if err != nil {
 			return actionRecord, nil, "", err
 		}
 		actionRecord.Quantity = qty
-		actionRecord.Price = execPrice
-		actionRecord.Leverage = posLev
-		trade := TradeEvent{
-			Timestamp:     ts,
-			Symbol:        symbol,
-			Action:        dec.Action,
-			Side:          "short",
-			Quantity:      qty,
-			Price:         execPrice,
-			Fee:           fee,
-			Slippage:      execPrice - basePrice,
-			OrderValue:    execPrice * qty,
-			RealizedPnL:   realized - fee,
-			Leverage:      posLev,
-			Cycle:         cycle,
-			PositionAfter: r.remainingPosition(symbol, "short"),
-		}
+		actionRecord.Price = trade.ExitPrice
+		actionRecord.Leverage = trade.Leverage
 		return actionRecord, []TradeEvent{trade}, "", nil
 
 	default:
@@ -225,6 +201,9 @@ func (r *Runner) determineQuantity(dec kernel.Decision, price float64) float64 {
 func (r *Runner) determineCloseQuantity(symbol, side string, dec kernel.Decision) float64 {
 	for _, pos := range r.account.Positions() {
 		if pos.Symbol == strings.ToUpper(symbol) && pos.Side == side {
+			if dec.CloseRatio > 0 && dec.CloseRatio < 1 {
+				return pos.Quantity * dec.CloseRatio
+			}
 			return pos.Quantity
 		}
 	}
@@ -375,30 +354,16 @@ func (r *Runner) checkLiquidation(ts int64, priceMap map[string]float64, cycle i
 			continue
 		}
 
-		realized, fee, finalPrice, err := r.account.Close(pos.Symbol, pos.Side, pos.Quantity, execPrice)
+		qty := pos.Quantity
+		evt, err := r.closePositionAt(pos.Symbol, pos.Side, qty, execPrice, price, ts, cycle, "liquidation")
 		if err != nil {
 			return nil, "", err
 		}
+		evt.Action = "liquidated"
+		evt.LiquidationFlag = true
+		evt.Note = fmt.Sprintf("forced liquidation at %.4f", evt.ExitPrice)
 
-		noteBuilder.WriteString(fmt.Sprintf("%s %s @ %.4f; ", pos.Symbol, pos.Side, finalPrice))
-
-		evt := TradeEvent{
-			Timestamp:       ts,
-			Symbol:          pos.Symbol,
-			Action:          "liquidated",
-			Side:            pos.Side,
-			Quantity:        pos.Quantity,
-			Price:           finalPrice,
-			Fee:             fee,
-			Slippage:        0,
-			OrderValue:      finalPrice * pos.Quantity,
-			RealizedPnL:     realized - fee,
-			Leverage:        pos.Leverage,
-			Cycle:           cycle,
-			PositionAfter:   0,
-			LiquidationFlag: true,
-			Note:            fmt.Sprintf("forced liquidation at %.4f", finalPrice),
-		}
+		noteBuilder.WriteString(fmt.Sprintf("%s %s @ %.4f; ", pos.Symbol, pos.Side, evt.ExitPrice))
 		events = append(events, evt)
 	}
 

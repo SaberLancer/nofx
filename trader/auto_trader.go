@@ -179,6 +179,8 @@ type AutoTrader struct {
 	safeMode              bool               // Safe mode: no new positions, protect existing ones
 	safeModeReason        string             // Why safe mode was activated
 	preDecisionTracker    *market.TickTrendTracker
+	unprotectedMu         sync.RWMutex
+	unprotectedPositions  map[string]unprotectedPosition // symbol_side -> missing SL/TP
 }
 
 // NewAutoTrader creates an automatic trader

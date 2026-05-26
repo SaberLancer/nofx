@@ -40,6 +40,10 @@ export interface Position {
   unrealized_pnl_pct: number
   liquidation_price: number
   margin_used: number
+  stop_loss?: number
+  take_profit?: number
+  unprotected?: boolean
+  protection_note?: string
 }
 
 export interface DecisionAction {
@@ -52,6 +56,8 @@ export interface DecisionAction {
   take_profit?: number    // Take profit price
   confidence?: number     // AI confidence (0-100)
   reasoning?: string      // Brief reasoning
+  unprotected?: boolean
+  protection_note?: string
   order_id: number
   timestamp: string
   success: boolean

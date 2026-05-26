@@ -111,8 +111,10 @@ type DecisionAction struct {
 	Reasoning  string    `json:"reasoning,omitempty"`   // Brief reasoning
 	OrderID    int64     `json:"order_id"`
 	Timestamp  time.Time `json:"timestamp"`
-	Success    bool      `json:"success"`
-	Error      string    `json:"error"`
+	Success         bool   `json:"success"`
+	Error           string `json:"error"`
+	Unprotected     bool   `json:"unprotected,omitempty"`      // Exchange SL/TP not fully set
+	ProtectionNote  string `json:"protection_note,omitempty"`  // Details when unprotected
 }
 
 // Statistics statistics information

@@ -35,6 +35,8 @@ export interface PromptSectionsConfig {
   role_definition?: string;
   trading_frequency?: string;
   entry_standards?: string;
+  reduce_standards?: string;
+  exit_standards?: string;
   decision_process?: string;
 }
 

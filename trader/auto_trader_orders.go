@@ -134,13 +134,7 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 	posKey := decision.Symbol + "_long"
 	at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
 
-	// Set stop loss and take profit
-	if err := at.trader.SetStopLoss(decision.Symbol, "LONG", quantity, decision.StopLoss); err != nil {
-		logger.Infof("  ⚠ Failed to set stop loss: %v", err)
-	}
-	if err := at.trader.SetTakeProfit(decision.Symbol, "LONG", quantity, decision.TakeProfit); err != nil {
-		logger.Infof("  ⚠ Failed to set take profit: %v", err)
-	}
+	at.applyOpenPositionProtection(decision, decision.Symbol, "LONG", quantity, actionRecord)
 
 	return nil
 }
@@ -251,13 +245,7 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 	posKey := decision.Symbol + "_short"
 	at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
 
-	// Set stop loss and take profit
-	if err := at.trader.SetStopLoss(decision.Symbol, "SHORT", quantity, decision.StopLoss); err != nil {
-		logger.Infof("  ⚠ Failed to set stop loss: %v", err)
-	}
-	if err := at.trader.SetTakeProfit(decision.Symbol, "SHORT", quantity, decision.TakeProfit); err != nil {
-		logger.Infof("  ⚠ Failed to set take profit: %v", err)
-	}
+	at.applyOpenPositionProtection(decision, decision.Symbol, "SHORT", quantity, actionRecord)
 
 	return nil
 }
@@ -309,7 +297,11 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 	}
 
 	// Close position
-	order, err := at.trader.CloseLong(decision.Symbol, 0) // 0 = close all
+	closeQty := 0.0
+	if decision.CloseRatio > 0 && decision.CloseRatio < 1 && quantity > 0 {
+		closeQty = quantity * decision.CloseRatio
+	}
+	order, err := at.trader.CloseLong(decision.Symbol, closeQty) // 0 = close all
 	if err != nil {
 		return err
 	}
@@ -320,8 +312,12 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 	}
 
 	// Record order to database and poll for confirmation
-	at.recordAndConfirmOrder(order, decision.Symbol, "close_long", quantity, marketData.CurrentPrice, 0, entryPrice)
+	closedQty := quantityOrDefault(closeQty, quantity)
+	at.recordAndConfirmOrder(order, decision.Symbol, "close_long", closedQty, marketData.CurrentPrice, 0, entryPrice)
 
+	if closedQty >= quantity*0.999 || quantity <= 0 {
+		at.clearUnprotected(decision.Symbol, "long")
+	}
 	logger.Infof("  ✓ Position closed successfully")
 	return nil
 }
@@ -373,7 +369,11 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 	}
 
 	// Close position
-	order, err := at.trader.CloseShort(decision.Symbol, 0) // 0 = close all
+	closeQty := 0.0
+	if decision.CloseRatio > 0 && decision.CloseRatio < 1 && quantity > 0 {
+		closeQty = quantity * decision.CloseRatio
+	}
+	order, err := at.trader.CloseShort(decision.Symbol, closeQty) // 0 = close all
 	if err != nil {
 		return err
 	}
@@ -384,8 +384,19 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 	}
 
 	// Record order to database and poll for confirmation
-	at.recordAndConfirmOrder(order, decision.Symbol, "close_short", quantity, marketData.CurrentPrice, 0, entryPrice)
+	closedQty := quantityOrDefault(closeQty, quantity)
+	at.recordAndConfirmOrder(order, decision.Symbol, "close_short", closedQty, marketData.CurrentPrice, 0, entryPrice)
 
+	if closedQty >= quantity*0.999 || quantity <= 0 {
+		at.clearUnprotected(decision.Symbol, "short")
+	}
 	logger.Infof("  ✓ Position closed successfully")
 	return nil
+}
+
+func quantityOrDefault(qty float64, fallback float64) float64 {
+	if qty > 0 {
+		return qty
+	}
+	return fallback
 }

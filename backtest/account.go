@@ -19,6 +19,8 @@ type position struct {
 	LiquidationPrice float64
 	OpenTime         int64
 	AccumulatedFee   float64 // Total fees paid (opening + any additions)
+	StopLoss         float64 // Simulated stop-loss trigger price (0 = none)
+	TakeProfit       float64 // Simulated take-profit trigger price (0 = none)
 }
 
 type BacktestAccount struct {
@@ -57,6 +59,32 @@ func (acc *BacktestAccount) ensurePosition(symbol, side string) *position {
 func (acc *BacktestAccount) removePosition(pos *position) {
 	key := positionKey(pos.Symbol, pos.Side)
 	delete(acc.positions, key)
+}
+
+// GetPosition returns a copy of an active position if it exists.
+func (acc *BacktestAccount) GetPosition(symbol, side string) (*position, bool) {
+	key := positionKey(symbol, side)
+	pos, ok := acc.positions[key]
+	if !ok || pos.Quantity <= epsilon {
+		return nil, false
+	}
+	cp := *pos
+	return &cp, true
+}
+
+// SetProtection attaches simulated SL/TP prices to an open position.
+func (acc *BacktestAccount) SetProtection(symbol, side string, stopLoss, takeProfit float64) {
+	key := positionKey(symbol, side)
+	pos, ok := acc.positions[key]
+	if !ok || pos.Quantity <= epsilon {
+		return
+	}
+	if stopLoss > 0 {
+		pos.StopLoss = stopLoss
+	}
+	if takeProfit > 0 {
+		pos.TakeProfit = takeProfit
+	}
 }
 
 func (acc *BacktestAccount) Open(symbol, side string, quantity float64, leverage int, price float64, ts int64) (*position, float64, float64, error) {
@@ -260,6 +288,8 @@ func (acc *BacktestAccount) RestoreFromSnapshots(cash float64, realized float64,
 			LiquidationPrice: snap.LiquidationPrice,
 			OpenTime:         snap.OpenTime,
 			AccumulatedFee:   snap.AccumulatedFee,
+			StopLoss:         snap.StopLoss,
+			TakeProfit:       snap.TakeProfit,
 		}
 		key := positionKey(pos.Symbol, pos.Side)
 		acc.positions[key] = pos

@@ -26,6 +26,8 @@ type PositionSnapshot struct {
 	MarginUsed       float64 `json:"margin_used"`
 	OpenTime         int64   `json:"open_time"`
 	AccumulatedFee   float64 `json:"accumulated_fee,omitempty"` // Opening fees accumulated
+	StopLoss         float64 `json:"stop_loss,omitempty"`
+	TakeProfit       float64 `json:"take_profit,omitempty"`
 }
 
 // BacktestState represents the real-time state during execution (in-memory state).
@@ -65,7 +67,10 @@ type TradeEvent struct {
 	Action          string  `json:"action"`
 	Side            string  `json:"side,omitempty"`
 	Quantity        float64 `json:"qty"`
-	Price           float64 `json:"price"`
+	Price           float64 `json:"price"` // Execution price (same as exit for closes)
+	EntryPrice      float64 `json:"entry_price,omitempty"`
+	ExitPrice       float64 `json:"exit_price,omitempty"`
+	CloseReason     string  `json:"close_reason,omitempty"` // stop_loss, take_profit, manual, liquidation
 	Fee             float64 `json:"fee"`
 	Slippage        float64 `json:"slippage"`
 	OrderValue      float64 `json:"order_value"`
@@ -176,4 +181,6 @@ type PositionStatus struct {
 	UnrealizedPnL    float64 `json:"unrealized_pnl"`
 	UnrealizedPnLPct float64 `json:"unrealized_pnl_pct"`
 	MarginUsed       float64 `json:"margin_used"`
+	StopLoss         float64 `json:"stop_loss,omitempty"`
+	TakeProfit       float64 `json:"take_profit,omitempty"`
 }
