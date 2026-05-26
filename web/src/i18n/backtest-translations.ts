@@ -233,6 +233,8 @@ export const backtestTranslations = {
         resetFilters: 'Reset',
         sortPnlHigh: 'PnL high → low',
         sortPnlLow: 'PnL low → high',
+        viewDecision: 'View AI decision for this action',
+        clickActionHint: 'Click action to view AI decision',
       },
     faqBacktestLab: 'What is Backtest Lab?',
   faqBacktestLabAnswer:
@@ -453,6 +455,8 @@ export const backtestTranslations = {
         resetFilters: '重置筛选',
         sortPnlHigh: '盈亏从高到低',
         sortPnlLow: '盈亏从低到高',
+        viewDecision: '查看该操作的 AI 决策',
+        clickActionHint: '点击动作列可查看 AI 决策',
       },
     backtestChart: {
         noTrades: '没有交易记录',

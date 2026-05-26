@@ -77,6 +77,39 @@ func (s *Server) handleLatestDecisions(c *gin.Context) {
 	c.JSON(http.StatusOK, records)
 }
 
+// handleDecisionTrace returns a single decision record by cycle number.
+func (s *Server) handleDecisionTrace(c *gin.Context) {
+	_, traderID, err := s.getTraderFromQuery(c)
+	if err != nil {
+		SafeBadRequest(c, "Invalid trader ID")
+		return
+	}
+
+	trader, err := s.traderManager.GetTrader(traderID)
+	if err != nil {
+		SafeNotFound(c, "Trader")
+		return
+	}
+
+	cycle := 0
+	if cycleStr := c.Query("cycle"); cycleStr != "" {
+		if parsed, err := strconv.Atoi(cycleStr); err == nil {
+			cycle = parsed
+		}
+	}
+	if cycle <= 0 {
+		SafeBadRequest(c, "cycle is required")
+		return
+	}
+
+	record, err := trader.GetStore().Decision().GetRecordByCycle(trader.GetID(), cycle)
+	if err != nil {
+		SafeNotFound(c, "Decision record")
+		return
+	}
+	c.JSON(http.StatusOK, record)
+}
+
 // handleStatistics Statistics information
 func (s *Server) handleStatistics(c *gin.Context) {
 	_, traderID, err := s.getTraderFromQuery(c)

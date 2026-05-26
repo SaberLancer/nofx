@@ -558,6 +558,7 @@ export function BacktestPage() {
                       {viewTab === 'trades' && (
                         <BacktestTradesTab
                           key={selectedRunId}
+                          runId={selectedRunId}
                           trades={trades}
                         />
                       )}

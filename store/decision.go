@@ -319,6 +319,21 @@ func (s *DecisionStore) GetAllStatistics() (*Statistics, error) {
 	return stats, nil
 }
 
+// GetRecordByCycle returns the decision record for a trader at the given cycle.
+func (s *DecisionStore) GetRecordByCycle(traderID string, cycle int) (*DecisionRecord, error) {
+	if cycle <= 0 {
+		return nil, fmt.Errorf("invalid cycle number")
+	}
+	var dbRecord DecisionRecordDB
+	err := s.db.Where("trader_id = ? AND cycle_number = ?", traderID, cycle).
+		Order("timestamp DESC").
+		First(&dbRecord).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query decision record: %w", err)
+	}
+	return dbRecord.toRecord(), nil
+}
+
 // GetLastCycleNumber gets the last cycle number for specified trader
 func (s *DecisionStore) GetLastCycleNumber(traderID string) (int, error) {
 	var cycleNumber *int

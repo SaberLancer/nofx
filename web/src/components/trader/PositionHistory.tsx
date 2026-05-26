@@ -1,11 +1,19 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Brain } from 'lucide-react'
 import { api } from '../../lib/api'
+import {
+  closeActionForSide,
+  findDecisionForOperation,
+  openActionForSide,
+} from '../../lib/decisionTradeMatch'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { t, type Language } from '../../i18n/translations'
 import { MetricTooltip } from '../common/MetricTooltip'
 import { formatPrice, formatQuantity } from '../../utils/format'
 import { NofxSelect } from '../ui/select'
+import { DecisionDetailModal } from './DecisionDetailModal'
 import type {
+  DecisionRecord,
   HistoricalPosition,
   TraderStats,
   SymbolStats,
@@ -229,8 +237,18 @@ function DirectionStatsCard({ stat, language }: { stat: DirectionStats; language
   )
 }
 
+type PositionDecisionKind = 'open' | 'close'
+
 // Position Row Component
-function PositionRow({ position }: { position: HistoricalPosition }) {
+function PositionRow({
+  position,
+  language,
+  onViewDecision,
+}: {
+  position: HistoricalPosition
+  language: Language
+  onViewDecision: (position: HistoricalPosition, kind: PositionDecisionKind) => void
+}) {
   const side = position.side || ''
   const isLong = side.toUpperCase() === 'LONG'
   const realizedPnl = position.realized_pnl || 0
@@ -330,6 +348,32 @@ function PositionRow({ position }: { position: HistoricalPosition }) {
       <td className="py-3 px-4 text-right text-xs" style={{ color: '#848E9C' }}>
         {formatDate(position.exit_time)}
       </td>
+
+      {/* AI decisions */}
+      <td className="py-3 px-4 text-center whitespace-nowrap">
+        <div className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onViewDecision(position, 'open')}
+            title={t('positionHistory.viewOpenDecision', language)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-white/10"
+            style={{ color: '#0ECB81', border: '1px solid rgba(14, 203, 129, 0.35)' }}
+          >
+            <Brain className="w-3.5 h-3.5" />
+            <span>{language === 'zh' ? '开' : 'In'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onViewDecision(position, 'close')}
+            title={t('positionHistory.viewCloseDecision', language)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-white/10"
+            style={{ color: '#F6465D', border: '1px solid rgba(246, 70, 93, 0.35)' }}
+          >
+            <Brain className="w-3.5 h-3.5" />
+            <span>{language === 'zh' ? '平' : 'Out'}</span>
+          </button>
+        </div>
+      </td>
     </tr>
   )
 }
@@ -352,6 +396,80 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
   const [filterSide, setFilterSide] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'time' | 'pnl' | 'pnl_pct'>('time')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  const [decisionsCache, setDecisionsCache] = useState<DecisionRecord[] | null>(
+    null
+  )
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalLoading, setModalLoading] = useState(false)
+  const [modalError, setModalError] = useState<
+    'not_found' | 'system' | 'fetch' | null
+  >(null)
+  const [modalDecision, setModalDecision] = useState<DecisionRecord | null>(
+    null
+  )
+  const [modalMeta, setModalMeta] = useState<{
+    symbol: string
+    action: string
+    kind: PositionDecisionKind
+  } | null>(null)
+
+  const loadDecisions = useCallback(async () => {
+    if (decisionsCache) return decisionsCache
+    const list = await api.getDecisions(traderId)
+    setDecisionsCache(list)
+    return list
+  }, [traderId, decisionsCache])
+
+  const handleViewDecision = useCallback(
+    async (position: HistoricalPosition, kind: PositionDecisionKind) => {
+      const action =
+        kind === 'open'
+          ? openActionForSide(position.side)
+          : closeActionForSide(position.side)
+      const eventTime =
+        kind === 'open'
+          ? new Date(position.entry_time).getTime()
+          : new Date(position.exit_time).getTime()
+
+      setModalMeta({
+        symbol: position.symbol,
+        action,
+        kind,
+      })
+      setModalOpen(true)
+      setModalLoading(true)
+      setModalError(null)
+      setModalDecision(null)
+
+      try {
+        const list = await loadDecisions()
+        const match = findDecisionForOperation(
+          list,
+          position.symbol,
+          action,
+          eventTime
+        )
+        if (match) {
+          setModalDecision(match)
+        } else {
+          setModalError('not_found')
+        }
+      } catch {
+        setModalError('fetch')
+      } finally {
+        setModalLoading(false)
+      }
+    },
+    [loadDecisions]
+  )
+
+  const closeModal = useCallback(() => {
+    setModalOpen(false)
+    setModalMeta(null)
+    setModalDecision(null)
+    setModalError(null)
+  }, [])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -792,11 +910,22 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
                 >
                   {t('positionHistory.closedAt', language)}
                 </th>
+                <th
+                  className="py-3 px-4 text-center text-xs font-semibold uppercase tracking-wider"
+                  style={{ color: '#848E9C' }}
+                >
+                  {t('positionHistory.colDecision', language)}
+                </th>
               </tr>
             </thead>
             <tbody>
               {filteredPositions.map((position) => (
-                <PositionRow key={position.id} position={position} />
+                <PositionRow
+                  key={position.id}
+                  position={position}
+                  language={language}
+                  onViewDecision={handleViewDecision}
+                />
               ))}
             </tbody>
           </table>
@@ -913,6 +1042,29 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
           </div>
         </div>
       </div>
+
+      <DecisionDetailModal
+        open={modalOpen}
+        onClose={closeModal}
+        language={language}
+        title={
+          modalMeta
+            ? t('decisionModal.titleLive', language)
+                .replace('{symbol}', modalMeta.symbol.replace('USDT', ''))
+                .replace(
+                  '{action}',
+                  modalMeta.kind === 'open'
+                    ? t('positionHistory.viewOpenDecision', language)
+                    : t('positionHistory.viewCloseDecision', language)
+                )
+            : ''
+        }
+        loading={modalLoading}
+        errorKind={modalError}
+        decision={modalDecision}
+        highlightSymbol={modalMeta?.symbol}
+        highlightAction={modalMeta?.action}
+      />
     </div>
   )
 }

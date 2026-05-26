@@ -358,6 +358,10 @@ Returns: [{"id":"<string>","symbol":"<string>","action":"open_long|open_short|cl
 				`Query: ?trader_id=<EXACT trader_id from GET /api/my-traders>
 Returns the most recent AI decision for each symbol analyzed in the last scan cycle.`,
 				s.handleLatestDecisions)
+			s.routeWithSchema(protected, "GET", "/decisions/trace", "Single AI decision record by cycle",
+				`Query: ?trader_id=<EXACT trader_id>&cycle=<int>
+Returns full decision record (CoT, actions, prompts) for the given cycle.`,
+				s.handleDecisionTrace)
 			s.routeWithSchema(protected, "GET", "/statistics", "Trading performance statistics",
 				`Query: ?trader_id=<EXACT trader_id from GET /api/my-traders>
 Returns: {"total_trades":<int>,"winning_trades":<int>,"win_rate":<float>,"total_pnl":<float>,"sharpe_ratio":<float>,"max_drawdown":<float>}`,

@@ -7,6 +7,8 @@ interface DecisionCardProps {
   decision: DecisionRecord
   language: Language
   onSymbolClick?: (symbol: string) => void
+  /** When set, matching symbol+action cards get a highlight ring. */
+  highlightActionKey?: string
 }
 
 // Action type configuration
@@ -44,7 +46,17 @@ function getConfidenceColor(confidence: number | undefined): string {
 }
 
 // Single Action Card Component
-function ActionCard({ action, language, onSymbolClick }: { action: DecisionAction; language: Language; onSymbolClick?: (symbol: string) => void }) {
+function ActionCard({
+  action,
+  language,
+  onSymbolClick,
+  highlighted,
+}: {
+  action: DecisionAction
+  language: Language
+  onSymbolClick?: (symbol: string) => void
+  highlighted?: boolean
+}) {
   const config = ACTION_CONFIG[action.action] || ACTION_CONFIG.wait
   const isLong = action.action.includes('long')
   const isOpen = action.action.includes('open')
@@ -54,8 +66,12 @@ function ActionCard({ action, language, onSymbolClick }: { action: DecisionActio
       className="rounded-lg p-4 transition-all duration-200 hover:scale-[1.01]"
       style={{
         background: 'linear-gradient(135deg, #1E2329 0%, #181C21 100%)',
-        border: `1px solid ${config.color}33`,
-        boxShadow: `0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.03)`,
+        border: highlighted
+          ? '2px solid #F0B90B'
+          : `1px solid ${config.color}33`,
+        boxShadow: highlighted
+          ? '0 0 0 2px rgba(240, 185, 11, 0.2), 0 4px 12px rgba(0, 0, 0, 0.2)'
+          : `0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.03)`,
       }}
     >
       {/* Header Row */}
@@ -232,7 +248,12 @@ function ActionCard({ action, language, onSymbolClick }: { action: DecisionActio
   )
 }
 
-export function DecisionCard({ decision, language, onSymbolClick }: DecisionCardProps) {
+export function DecisionCard({
+  decision,
+  language,
+  onSymbolClick,
+  highlightActionKey,
+}: DecisionCardProps) {
   const preDecisionSkipped = isPreDecisionSkipped(decision)
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
   const [showInputPrompt, setShowInputPrompt] = useState(false)
@@ -319,7 +340,16 @@ export function DecisionCard({ decision, language, onSymbolClick }: DecisionCard
       {decision.decisions && decision.decisions.length > 0 && (
         <div className="space-y-3 mb-4">
           {decision.decisions.map((action, index) => (
-            <ActionCard key={`${action.symbol}-${index}`} action={action} language={language} onSymbolClick={onSymbolClick} />
+            <ActionCard
+              key={`${action.symbol}-${index}`}
+              action={action}
+              language={language}
+              onSymbolClick={onSymbolClick}
+              highlighted={
+                !!highlightActionKey &&
+                highlightActionKey === `${action.symbol}:${action.action}`
+              }
+            />
           ))}
         </div>
       )}

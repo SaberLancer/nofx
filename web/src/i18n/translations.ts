@@ -993,6 +993,20 @@ const translationsBase = {
       pnl: 'P&L',
       duration: 'Duration',
       closedAt: 'Closed At',
+      colDecision: 'AI',
+      viewOpenDecision: 'Open decision',
+      viewCloseDecision: 'Close decision',
+    },
+
+    decisionModal: {
+      close: 'Close',
+      loading: 'Loading AI decision...',
+      notFound: 'No AI decision record found for this operation.',
+      systemClose:
+        'This fill was triggered by stop-loss, take-profit, or liquidation — not a direct AI close in this cycle.',
+      fetchFailed: 'Failed to load decision. Please try again.',
+      titleBacktest: 'AI decision · Cycle #{cycle}',
+      titleLive: 'AI decision · {symbol} {action}',
     },
 
     // Data Page
@@ -2305,6 +2319,20 @@ const translationsBase = {
       pnl: '盈亏',
       duration: '持仓时长',
       closedAt: '平仓时间',
+      colDecision: 'AI',
+      viewOpenDecision: '开仓决策',
+      viewCloseDecision: '平仓决策',
+    },
+
+    decisionModal: {
+      close: '关闭',
+      loading: '正在加载 AI 决策...',
+      notFound: '未找到与该操作对应的 AI 决策记录。',
+      systemClose:
+        '该笔成交由止损/止盈或强平触发，本周期无 AI 直接平仓决策。',
+      fetchFailed: '加载决策失败，请稍后重试。',
+      titleBacktest: 'AI 决策 · 周期 #{cycle}',
+      titleLive: 'AI 决策 · {symbol} {action}',
     },
 
     // Data Page

@@ -1,7 +1,14 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useMemo, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowDown, ArrowUp, ArrowUpDown, Filter, RotateCcw } from 'lucide-react'
-import type { BacktestTradeEvent } from '../../types'
+import { ArrowDown, ArrowUp, ArrowUpDown, Brain, Filter, RotateCcw } from 'lucide-react'
+import type { BacktestTradeEvent, DecisionRecord } from '../../types'
+import { api } from '../../lib/api'
+import {
+  findMatchingActionIndex,
+  isAutomaticClose,
+  tradeActionForBacktest,
+} from '../../lib/decisionTradeMatch'
+import { DecisionDetailModal } from '../trader/DecisionDetailModal'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { t } from '../../i18n/translations'
 
@@ -102,11 +109,13 @@ function TradeTable({
   sortKey,
   sortDir,
   onPnlSort,
+  onActionClick,
 }: {
   trades: BacktestTradeEvent[]
   sortKey: SortKey
   sortDir: SortDir
   onPnlSort: () => void
+  onActionClick: (trade: BacktestTradeEvent) => void
 }) {
   const { language } = useLanguage()
 
@@ -199,17 +208,29 @@ function TradeTable({
                     {trade.symbol.replace('USDT', '')}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <span
-                      className="px-2 py-0.5 rounded text-xs font-medium"
-                      style={{
-                        background: isOpen
-                          ? 'rgba(14, 203, 129, 0.15)'
-                          : 'rgba(246, 70, 93, 0.15)',
-                        color: isOpen ? '#0ECB81' : '#F6465D',
-                      }}
+                    <button
+                      type="button"
+                      onClick={() => onActionClick(trade)}
+                      title={t('backtestTrades.viewDecision', language)}
+                      className="inline-flex items-center gap-1 rounded transition-opacity hover:opacity-90"
                     >
-                      {formatActionLabel(trade.action, trade.close_reason)}
-                    </span>
+                      <span
+                        className="px-2 py-0.5 rounded text-xs font-medium"
+                        style={{
+                          background: isOpen
+                            ? 'rgba(14, 203, 129, 0.15)'
+                            : 'rgba(246, 70, 93, 0.15)',
+                          color: isOpen ? '#0ECB81' : '#F6465D',
+                          border: '1px solid transparent',
+                        }}
+                      >
+                        {formatActionLabel(trade.action, trade.close_reason)}
+                      </span>
+                      <Brain
+                        className="w-3.5 h-3.5 shrink-0"
+                        style={{ color: '#F0B90B' }}
+                      />
+                    </button>
                     {trade.leverage ? (
                       <span
                         className="ml-1 text-xs"
@@ -261,12 +282,75 @@ function TradeTable({
 }
 
 interface BacktestTradesTabProps {
+  runId: string
   trades: BacktestTradeEvent[] | undefined
 }
 
-export function BacktestTradesTab({ trades }: BacktestTradesTabProps) {
+export function BacktestTradesTab({ runId, trades }: BacktestTradesTabProps) {
   const { language } = useLanguage()
   const allTrades = trades ?? []
+
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalLoading, setModalLoading] = useState(false)
+  const [modalError, setModalError] = useState<
+    'not_found' | 'system' | 'fetch' | null
+  >(null)
+  const [modalDecision, setModalDecision] = useState<DecisionRecord | null>(
+    null
+  )
+  const [activeTrade, setActiveTrade] = useState<BacktestTradeEvent | null>(
+    null
+  )
+
+  const handleActionClick = useCallback(
+    async (trade: BacktestTradeEvent) => {
+      setActiveTrade(trade)
+      setModalOpen(true)
+      setModalLoading(true)
+      setModalError(null)
+      setModalDecision(null)
+
+      const action = tradeActionForBacktest(trade)
+      const autoClose = isAutomaticClose(trade)
+
+      try {
+        if (trade.cycle > 0) {
+          const record = await api.getBacktestTrace(runId, trade.cycle)
+          const matchIdx = findMatchingActionIndex(
+            record,
+            trade.symbol,
+            action
+          )
+          if (matchIdx < 0 && autoClose) {
+            setModalDecision(record)
+            setModalError('system')
+          } else {
+            setModalDecision(record)
+          }
+        } else if (autoClose) {
+          setModalError('system')
+        } else {
+          setModalError('not_found')
+        }
+      } catch {
+        if (autoClose) {
+          setModalError('system')
+        } else {
+          setModalError('not_found')
+        }
+      } finally {
+        setModalLoading(false)
+      }
+    },
+    [runId]
+  )
+
+  const closeModal = useCallback(() => {
+    setModalOpen(false)
+    setActiveTrade(null)
+    setModalDecision(null)
+    setModalError(null)
+  }, [])
 
   const symbolOptions = useMemo(() => {
     const set = new Set<string>()
@@ -433,7 +517,7 @@ export function BacktestTradesTab({ trades }: BacktestTradesTabProps) {
         )}
 
         <span className="text-xs ml-auto" style={{ color: '#5E6673' }}>
-          {showingText}
+          {t('backtestTrades.clickActionHint', language)} · {showingText}
           {sortKey === 'pnl' && (
             <span style={{ color: '#F0B90B' }}>
               {' '}
@@ -451,6 +535,33 @@ export function BacktestTradesTab({ trades }: BacktestTradesTabProps) {
         sortKey={sortKey}
         sortDir={sortDir}
         onPnlSort={handlePnlSort}
+        onActionClick={handleActionClick}
+      />
+
+      <DecisionDetailModal
+        open={modalOpen}
+        onClose={closeModal}
+        language={language}
+        title={
+          activeTrade
+            ? t('decisionModal.titleBacktest', language).replace(
+                '{cycle}',
+                String(activeTrade.cycle)
+              )
+            : t('decisionModal.loading', language)
+        }
+        subtitle={
+          activeTrade
+            ? `${activeTrade.symbol.replace('USDT', '')} · ${formatActionLabel(activeTrade.action, activeTrade.close_reason)}`
+            : undefined
+        }
+        loading={modalLoading}
+        errorKind={modalError}
+        decision={modalDecision}
+        highlightSymbol={activeTrade?.symbol}
+        highlightAction={
+          activeTrade ? tradeActionForBacktest(activeTrade) : undefined
+        }
       />
     </motion.div>
   )

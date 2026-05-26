@@ -49,6 +49,21 @@ export const dataApi = {
     return result.data!
   },
 
+  async getDecisionTrace(
+    traderId: string,
+    cycle: number
+  ): Promise<DecisionRecord> {
+    const query = new URLSearchParams({
+      trader_id: traderId,
+      cycle: String(cycle),
+    })
+    const result = await httpClient.get<DecisionRecord>(
+      `${API_BASE}/decisions/trace?${query}`
+    )
+    if (!result.success) throw new Error('Failed to fetch decision trace')
+    return result.data!
+  },
+
   async getLatestDecisions(
     traderId?: string,
     limit: number = 5,
