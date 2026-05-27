@@ -9,13 +9,31 @@ import (
 
 // checkStopLossTakeProfit closes positions when simulated SL/TP levels are touched on the decision bar.
 // Uses bar high/low when available; falls back to mark price.
+// Respects EnableStopLoss / EnableTakeProfit from the risk control config.
 func (r *Runner) checkStopLossTakeProfit(ts int64, priceMap map[string]float64, cycle int) ([]TradeEvent, string, error) {
+	rc := r.strategyEngine.GetRiskControlConfig()
+	slEnabled := rc.EffectiveEnableStopLoss()
+	tpEnabled := rc.EffectiveEnableTakeProfit()
+
+	// Nothing to do when both are disabled.
+	if !slEnabled && !tpEnabled {
+		return nil, "", nil
+	}
+
 	positions := append([]*position(nil), r.account.Positions()...)
 	events := make([]TradeEvent, 0)
 	var noteBuilder strings.Builder
 
 	for _, pos := range positions {
-		if pos.StopLoss <= 0 && pos.TakeProfit <= 0 {
+		effectiveSL := pos.StopLoss
+		effectiveTP := pos.TakeProfit
+		if !slEnabled {
+			effectiveSL = 0
+		}
+		if !tpEnabled {
+			effectiveTP = 0
+		}
+		if effectiveSL <= 0 && effectiveTP <= 0 {
 			continue
 		}
 
@@ -34,7 +52,11 @@ func (r *Runner) checkStopLossTakeProfit(ts int64, priceMap map[string]float64, 
 			}
 		}
 
-		trigger, execPrice, reason := evaluateProtectionTrigger(pos, barLow, barHigh, mark)
+		// Temporarily override pos fields for evaluation using effective values.
+		evalPos := *pos
+		evalPos.StopLoss = effectiveSL
+		evalPos.TakeProfit = effectiveTP
+		trigger, execPrice, reason := evaluateProtectionTrigger(&evalPos, barLow, barHigh, mark)
 		if !trigger {
 			continue
 		}

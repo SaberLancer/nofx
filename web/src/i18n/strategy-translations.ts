@@ -221,6 +221,18 @@ export const riskControl = {
     en: 'Validated on open (code)',
     es: 'Validado al abrir',
   },
+  enableStopLoss: { zh: '启用止损', en: 'Enable Stop Loss', es: 'Activar Stop Loss' },
+  enableStopLossDesc: {
+    zh: '关闭后回测与实盘均不执行止损，AI 也无需提供 stop_loss 字段',
+    en: 'When off, SL is not simulated in backtest or placed in live; AI need not provide stop_loss',
+    es: 'Al desactivar, SL no se simula ni coloca',
+  },
+  enableTakeProfit: { zh: '启用止盈', en: 'Enable Take Profit', es: 'Activar Take Profit' },
+  enableTakeProfitDesc: {
+    zh: '关闭后回测与实盘均不执行止盈，AI 也无需提供 take_profit 字段',
+    en: 'When off, TP is not simulated in backtest or placed in live; AI need not provide take_profit',
+    es: 'Al desactivar, TP no se simula ni coloca',
+  },
 };
 
 // ============================================================================

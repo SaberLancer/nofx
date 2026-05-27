@@ -242,4 +242,8 @@ export interface RiskControlConfig {
   struct_stop_wick_buffer_pct?: number;
   /** Require structure-timeframe stop placement in prompt (default true) */
   enforce_struct_stop?: boolean;
+  /** Enable stop loss simulation / placement (default true) */
+  enable_stop_loss?: boolean;
+  /** Enable take profit simulation / placement (default true) */
+  enable_take_profit?: boolean;
 }

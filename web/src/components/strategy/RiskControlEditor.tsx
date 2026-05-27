@@ -261,6 +261,50 @@ export function RiskControlEditor({
           {ts(riskControl.stopLossStructureDesc, language)}
         </p>
 
+        {/* SL / TP enable toggles */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div
+            className="p-4 rounded-lg flex flex-col justify-center"
+            style={{ background: '#0B0E11', border: '1px solid #2B3139' }}
+          >
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.enable_stop_loss !== false}
+                onChange={(e) => updateField('enable_stop_loss', e.target.checked)}
+                disabled={disabled}
+                className="accent-red-500"
+              />
+              <span className="text-sm" style={{ color: '#EAECEF' }}>
+                {ts(riskControl.enableStopLoss, language)}
+              </span>
+            </label>
+            <p className="text-xs mt-2" style={{ color: '#848E9C' }}>
+              {ts(riskControl.enableStopLossDesc, language)}
+            </p>
+          </div>
+          <div
+            className="p-4 rounded-lg flex flex-col justify-center"
+            style={{ background: '#0B0E11', border: '1px solid #2B3139' }}
+          >
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.enable_take_profit !== false}
+                onChange={(e) => updateField('enable_take_profit', e.target.checked)}
+                disabled={disabled}
+                className="accent-green-500"
+              />
+              <span className="text-sm" style={{ color: '#EAECEF' }}>
+                {ts(riskControl.enableTakeProfit, language)}
+              </span>
+            </label>
+            <p className="text-xs mt-2" style={{ color: '#848E9C' }}>
+              {ts(riskControl.enableTakeProfitDesc, language)}
+            </p>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-4 mb-4">
           <NumberField
             label={ts(riskControl.btcEthMinStopDist, language)}

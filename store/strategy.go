@@ -924,6 +924,11 @@ type RiskControlConfig struct {
 	// When true (default), prompt requires structure-TF stop placement
 	EnforceStructStop *bool `json:"enforce_struct_stop,omitempty"`
 
+	// EnableStopLoss: when false, SL is not set/simulated and validation is skipped (default true)
+	EnableStopLoss *bool `json:"enable_stop_loss,omitempty"`
+	// EnableTakeProfit: when false, TP is not set/simulated and validation is skipped (default true)
+	EnableTakeProfit *bool `json:"enable_take_profit,omitempty"`
+
 	// Position PnL% rules (margin-based unrealized PnL %, AI guided — see user prompt each cycle)
 	LockProfitPnLPct       float64 `json:"lock_profit_pnl_pct,omitempty"`        // e.g. 8 → start partial reduce
 	LockProfitSecondPnLPct float64 `json:"lock_profit_second_pnl_pct,omitempty"` // e.g. 12 → second tier reduce

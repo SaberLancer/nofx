@@ -71,18 +71,24 @@ func (at *AutoTrader) retryCall(label string, fn func() error) error {
 }
 
 // applyOpenPositionProtection sets exchange SL/TP with retries; marks unprotected on failure.
+// Respects EnableStopLoss / EnableTakeProfit from the strategy risk control config.
 func (at *AutoTrader) applyOpenPositionProtection(
 	decision *kernel.Decision,
 	symbol, positionSide string,
 	quantity float64,
 	actionRecord *store.DecisionAction,
 ) {
+	rc := at.strategyEngine.GetRiskControlConfig()
+	slEnabled := rc.EffectiveEnableStopLoss()
+	tpEnabled := rc.EffectiveEnableTakeProfit()
+
 	sideLower := strings.ToLower(positionSide)
-	slOK := decision.StopLoss <= 0
-	tpOK := decision.TakeProfit <= 0
+	// If SL disabled, treat as already OK; same for TP.
+	slOK := !slEnabled || decision.StopLoss <= 0
+	tpOK := !tpEnabled || decision.TakeProfit <= 0
 	var notes []string
 
-	if decision.StopLoss > 0 {
+	if slEnabled && decision.StopLoss > 0 {
 		err := at.retryCall("set stop loss", func() error {
 			return at.trader.SetStopLoss(symbol, positionSide, quantity, decision.StopLoss)
 		})
@@ -95,7 +101,7 @@ func (at *AutoTrader) applyOpenPositionProtection(
 		}
 	}
 
-	if decision.TakeProfit > 0 {
+	if tpEnabled && decision.TakeProfit > 0 {
 		err := at.retryCall("set take profit", func() error {
 			return at.trader.SetTakeProfit(symbol, positionSide, quantity, decision.TakeProfit)
 		})
@@ -146,6 +152,10 @@ func (at *AutoTrader) retryUnprotectedPositions() {
 	}
 	at.unprotectedMu.RUnlock()
 
+	rc := at.strategyEngine.GetRiskControlConfig()
+	slEnabled := rc.EffectiveEnableStopLoss()
+	tpEnabled := rc.EffectiveEnableTakeProfit()
+
 	for _, info := range pending {
 		posSide := "LONG"
 		if strings.ToLower(info.Side) == "short" {
@@ -161,7 +171,7 @@ func (at *AutoTrader) retryUnprotectedPositions() {
 		}
 
 		updated := info
-		if !info.StopLossOK && info.StopLoss > 0 {
+		if slEnabled && !info.StopLossOK && info.StopLoss > 0 {
 			if err := at.retryCall("retry stop loss", func() error {
 				return at.trader.SetStopLoss(info.Symbol, posSide, qty, info.StopLoss)
 			}); err != nil {
@@ -170,9 +180,11 @@ func (at *AutoTrader) retryUnprotectedPositions() {
 				updated.StopLossOK = true
 				at.logInfof("  ✓ Recovered stop loss for %s %s @ %.4f", info.Symbol, info.Side, info.StopLoss)
 			}
+		} else if !slEnabled {
+			updated.StopLossOK = true
 		}
 
-		if !info.TakeProfitOK && info.TakeProfit > 0 {
+		if tpEnabled && !info.TakeProfitOK && info.TakeProfit > 0 {
 			if err := at.retryCall("retry take profit", func() error {
 				return at.trader.SetTakeProfit(info.Symbol, posSide, qty, info.TakeProfit)
 			}); err != nil {
@@ -181,6 +193,8 @@ func (at *AutoTrader) retryUnprotectedPositions() {
 				updated.TakeProfitOK = true
 				at.logInfof("  ✓ Recovered take profit for %s %s @ %.4f", info.Symbol, info.Side, info.TakeProfit)
 			}
+		} else if !tpEnabled {
+			updated.TakeProfitOK = true
 		}
 
 		if updated.StopLossOK && updated.TakeProfitOK {

@@ -40,6 +40,22 @@ func (r RiskControlConfig) EffectiveEnforceStructStop() bool {
 	return *r.EnforceStructStop
 }
 
+// EffectiveEnableStopLoss defaults to true when unset.
+func (r RiskControlConfig) EffectiveEnableStopLoss() bool {
+	if r.EnableStopLoss == nil {
+		return true
+	}
+	return *r.EnableStopLoss
+}
+
+// EffectiveEnableTakeProfit defaults to true when unset.
+func (r RiskControlConfig) EffectiveEnableTakeProfit() bool {
+	if r.EnableTakeProfit == nil {
+		return true
+	}
+	return *r.EnableTakeProfit
+}
+
 func (r RiskControlConfig) OpenProtectionParams() (minRR, btcEthMinSL, altMinSL float64) {
 	minRR = r.MinRiskRewardRatio
 	if minRR <= 0 {
