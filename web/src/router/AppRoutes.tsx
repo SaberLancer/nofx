@@ -343,9 +343,9 @@ function DashboardRoute() {
       : null,
     () => api.getLatestDecisions(selectedTraderId, decisionsLimit, true),
     {
-      refreshInterval: decisionsPollOff ? 0 : 15000,
+      refreshInterval: decisionsPollOff ? 0 : 30000,
       revalidateOnFocus: false,
-      dedupingInterval: 10000,
+      dedupingInterval: 20000,
       onErrorRetry: (_err, _key, _config, revalidate, { retryCount }) => {
         if (retryCount >= 2) {
           setDecisionsPollOff(true)

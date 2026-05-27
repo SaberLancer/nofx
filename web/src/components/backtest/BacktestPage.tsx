@@ -332,9 +332,9 @@ export function BacktestPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* Left Panel - Config / History */}
-          <div className="space-y-4">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 xl:items-stretch">
+          {/* Left: config + run list (run list keeps max-h-[300px]) */}
+          <div className="flex flex-col gap-4 min-h-0">
             <BacktestConfigForm
               formState={formState}
               wizardStep={wizardStep}
@@ -359,20 +359,21 @@ export function BacktestPage() {
             />
           </div>
 
-          {/* Right Panel - Results */}
-          <div className="xl:col-span-2 space-y-4">
+          {/* Right: status + stats + tab card — column height matches left; tab body scrolls */}
+          <div className="xl:col-span-2 flex flex-col gap-4 min-h-0 h-full">
             {!selectedRunId ? (
               <div
-                className="binance-card p-12 text-center"
+                className="binance-card flex-1 min-h-0 flex items-center justify-center p-12"
                 style={{ color: '#5E6673' }}
               >
-                <Brain className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                <p>{tr('emptyStates.selectRun')}</p>
+                <div className="text-center">
+                  <Brain className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                  <p>{tr('emptyStates.selectRun')}</p>
+                </div>
               </div>
             ) : (
-              <>
-                {/* Status Bar */}
-                <div className="binance-card p-4">
+              <div className="flex flex-col gap-4 flex-1 min-h-0 h-full">
+                <div className="binance-card p-4 shrink-0">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <ProgressRing progress={status?.progress_pct ?? selectedRun?.summary.progress_pct ?? 0} size={80} />
@@ -464,7 +465,6 @@ export function BacktestPage() {
                     </div>
                   )}
 
-                  {/* Real-time Positions Display */}
                   {status?.positions && status.positions.length > 0 && (
                     <PositionsDisplay
                       positions={status.positions}
@@ -475,8 +475,7 @@ export function BacktestPage() {
                   )}
                 </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 shrink-0">
                   <StatCard
                     icon={Target}
                     label={t('backtestPageExtra.equity', language)}
@@ -510,9 +509,8 @@ export function BacktestPage() {
                   />
                 </div>
 
-                {/* Tabs */}
-                <div className="binance-card">
-                  <div className="flex border-b" style={{ borderColor: '#2B3139' }}>
+                <div className="binance-card flex flex-col flex-1 min-h-0 overflow-hidden">
+                  <div className="flex border-b shrink-0" style={{ borderColor: '#2B3139' }}>
                     {(['overview', 'chart', 'trades', 'decisions'] as ViewTab[]).map((tab) => (
                       <button
                         key={tab}
@@ -538,7 +536,7 @@ export function BacktestPage() {
                     ))}
                   </div>
 
-                  <div className="p-4">
+                  <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4">
                     <AnimatePresence mode="wait">
                       {viewTab === 'overview' && (
                         <BacktestOverviewTab
@@ -579,7 +577,7 @@ export function BacktestPage() {
                     </AnimatePresence>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
