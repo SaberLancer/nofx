@@ -30,6 +30,7 @@ func (s *Server) registerBacktestRoutes(router *gin.RouterGroup) {
 	router.POST("/delete", s.handleBacktestDelete)
 	router.GET("/status", s.handleBacktestStatus)
 	router.GET("/runs", s.handleBacktestRuns)
+	router.GET("/config", s.handleBacktestConfig)
 	router.GET("/equity", s.handleBacktestEquity)
 	router.GET("/trades", s.handleBacktestTrades)
 	router.GET("/metrics", s.handleBacktestMetrics)
@@ -37,6 +38,32 @@ func (s *Server) registerBacktestRoutes(router *gin.RouterGroup) {
 	router.GET("/decisions", s.handleBacktestDecisions)
 	router.GET("/export", s.handleBacktestExport)
 	router.GET("/klines", s.handleBacktestKlines)
+}
+
+func (s *Server) handleBacktestConfig(c *gin.Context) {
+	if s.backtestManager == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "backtest manager unavailable"})
+		return
+	}
+	userID := normalizeUserID(c.GetString("user_id"))
+	runID := strings.TrimSpace(c.Query("run_id"))
+	if runID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "run_id is required"})
+		return
+	}
+	if _, err := s.ensureBacktestRunOwnership(runID, userID); writeBacktestAccessError(c, err) {
+		return
+	}
+	cfg, err := backtest.LoadConfig(runID)
+	if err != nil {
+		SafeInternalError(c, "Load backtest config", err)
+		return
+	}
+	// Safety: do not leak secrets even if persisted payload changes in future.
+	cfgCopy := *cfg
+	cfgCopy.AICfg.APIKey = ""
+	cfgCopy.AICfg.SecretKey = ""
+	c.JSON(http.StatusOK, cfgCopy)
 }
 
 type backtestStartRequest struct {

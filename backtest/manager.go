@@ -160,7 +160,11 @@ func (m *Manager) ListRuns() ([]*RunMetadata, error) {
 	}
 
 	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].UpdatedAt.After(metas[j].UpdatedAt)
+		// Keep run list ordered by creation time to avoid reordering on status/selection updates.
+		if metas[i].CreatedAt.Equal(metas[j].CreatedAt) {
+			return metas[i].RunID > metas[j].RunID
+		}
+		return metas[i].CreatedAt.After(metas[j].CreatedAt)
 	})
 
 	return metas, nil

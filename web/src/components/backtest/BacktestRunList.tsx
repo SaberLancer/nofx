@@ -6,6 +6,8 @@ import {
   Clock,
   Layers,
   Eye,
+  Copy,
+  Trash2,
 } from 'lucide-react'
 import { t, type Language } from '../../i18n/translations'
 
@@ -66,6 +68,8 @@ interface BacktestRunListProps {
   tr: (key: string, params?: Record<string, string | number>) => string
   onSelectRun: (runId: string) => void
   onToggleCompare: (runId: string) => void
+  onReuseRun: (runId: string) => void
+  onDeleteRun: (runId: string) => void
 }
 
 export function BacktestRunList({
@@ -76,6 +80,8 @@ export function BacktestRunList({
   tr,
   onSelectRun,
   onToggleCompare,
+  onReuseRun,
+  onDeleteRun,
 }: BacktestRunListProps) {
   return (
     <div className="binance-card p-4">
@@ -121,26 +127,48 @@ export function BacktestRunList({
                 <span className="text-xs" style={{ color: '#848E9C' }}>
                   {run.summary.progress_pct.toFixed(0)}% · ${run.summary.equity_last.toFixed(0)}
                 </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onToggleCompare(run.run_id)
-                  }}
-                  className="p-1 rounded"
-                  style={{
-                    background: compareRunIds.includes(run.run_id)
-                      ? 'rgba(240,185,11,0.2)'
-                      : 'transparent',
-                  }}
-                  title={t('backtestPageExtra.addToCompare', language)}
-                >
-                  <Eye
-                    className="w-3 h-3"
-                    style={{
-                      color: compareRunIds.includes(run.run_id) ? '#F0B90B' : '#5E6673',
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onReuseRun(run.run_id)
                     }}
-                  />
-                </button>
+                    className="p-1 rounded hover:bg-[#2B3139]"
+                    title={language === 'zh' ? '复用参数新建回测' : 'Reuse config to start a new run'}
+                  >
+                    <Copy className="w-3 h-3" style={{ color: '#5E6673' }} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onToggleCompare(run.run_id)
+                    }}
+                    className="p-1 rounded"
+                    style={{
+                      background: compareRunIds.includes(run.run_id)
+                        ? 'rgba(240,185,11,0.2)'
+                        : 'transparent',
+                    }}
+                    title={t('backtestPageExtra.addToCompare', language)}
+                  >
+                    <Eye
+                      className="w-3 h-3"
+                      style={{
+                        color: compareRunIds.includes(run.run_id) ? '#F0B90B' : '#5E6673',
+                      }}
+                    />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDeleteRun(run.run_id)
+                    }}
+                    className="p-1 rounded hover:bg-[#2B3139]"
+                    title={language === 'zh' ? '删除该回测' : 'Delete this run'}
+                  >
+                    <Trash2 className="w-3 h-3" style={{ color: '#F6465D' }} />
+                  </button>
+                </div>
               </div>
             </button>
           ))

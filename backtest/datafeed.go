@@ -49,6 +49,22 @@ func (df *DataFeed) loadAll() error {
 	start := time.Unix(df.cfg.StartTS, 0)
 	end := time.Unix(df.cfg.EndTS, 0)
 
+	// Ensure primary decision timeframe exists in fetched timeframes.
+	// Otherwise df.symbolSeries[firstSymbol].byTF[df.primaryTF] may be nil
+	// and trigger a panic when generating decisionTimes.
+	if df.primaryTF != "" {
+		hasPrimary := false
+		for _, tf := range df.timeframes {
+			if tf == df.primaryTF {
+				hasPrimary = true
+				break
+			}
+		}
+		if !hasPrimary {
+			df.timeframes = append(df.timeframes, df.primaryTF)
+		}
+	}
+
 	// longest timeframe used for auxiliary indicators
 	var longestDur time.Duration
 	for _, tf := range df.timeframes {
@@ -95,7 +111,29 @@ func (df *DataFeed) loadAll() error {
 
 	// Generate backtest progress timeline using the primary timeframe of the first symbol
 	firstSymbol := df.symbols[0]
-	primarySeries := df.symbolSeries[firstSymbol].byTF[df.primaryTF]
+
+	ss0 := df.symbolSeries[firstSymbol]
+	if ss0 == nil {
+		return fmt.Errorf("missing series container for symbol %s", firstSymbol)
+	}
+	primarySeries, ok := ss0.byTF[df.primaryTF]
+	if !ok || primarySeries == nil {
+		return fmt.Errorf("symbol %s missing primary timeframe %s", firstSymbol, df.primaryTF)
+	}
+
+	// Validate primary timeframe exists for all symbols once (avoid nil deref and
+	// avoid re-checking per timestamp).
+	for _, symbol := range df.symbols[1:] {
+		ss := df.symbolSeries[symbol]
+		if ss == nil {
+			return fmt.Errorf("missing series container for symbol %s", symbol)
+		}
+		s := ss.byTF[df.primaryTF]
+		if s == nil {
+			return fmt.Errorf("symbol %s missing primary timeframe %s", symbol, df.primaryTF)
+		}
+	}
+
 	startMs := start.UnixMilli()
 	endMs := end.UnixMilli()
 	for _, ts := range primarySeries.closeTimes {
@@ -106,12 +144,6 @@ func (df *DataFeed) loadAll() error {
 			break
 		}
 		df.decisionTimes = append(df.decisionTimes, ts)
-		// Align other symbols; report error early if data is missing
-		for _, symbol := range df.symbols[1:] {
-			if _, ok := df.symbolSeries[symbol].byTF[df.primaryTF]; !ok {
-				return fmt.Errorf("symbol %s missing timeframe %s", symbol, df.primaryTF)
-			}
-		}
 	}
 	if len(df.decisionTimes) == 0 {
 		return fmt.Errorf("no decision bars in range")

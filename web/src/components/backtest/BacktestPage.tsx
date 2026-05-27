@@ -26,6 +26,7 @@ import type {
   DecisionRecord,
   AIModel,
   Strategy,
+  BacktestSavedConfig,
 } from '../../types'
 import {
   BacktestConfigForm,
@@ -170,7 +171,24 @@ export function BacktestPage() {
 
   // Handlers
   const handleFormChange = (key: string, value: string | number | boolean | string[]) => {
-    setFormState((prev) => ({ ...prev, [key]: value }))
+    setFormState((prev) => {
+      // Keep decision timeframe consistent with selected timeframes.
+      // If user removes the current decisionTf from timeframes, fallback to the first timeframe.
+      if (key === 'timeframes' && Array.isArray(value)) {
+        const nextTfs = value.filter(Boolean)
+        const nextDecisionTf = nextTfs.includes(prev.decisionTf) ? prev.decisionTf : (nextTfs[0] ?? prev.decisionTf)
+        return { ...prev, timeframes: nextTfs, decisionTf: nextDecisionTf }
+      }
+      // If user changes decisionTf, ensure it is one of selected timeframes; otherwise fallback.
+      if (key === 'decisionTf' && typeof value === 'string') {
+        const next = value.trim()
+        if (next && prev.timeframes.includes(next)) {
+          return { ...prev, decisionTf: next }
+        }
+        return { ...prev, decisionTf: prev.timeframes[0] ?? prev.decisionTf }
+      }
+      return { ...prev, [key]: value }
+    })
   }
 
   const handleStart = async (event: FormEvent) => {
@@ -257,6 +275,74 @@ export function BacktestPage() {
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : tr('toasts.deleteFailed')
       setToast({ text: errMsg, tone: 'error' })
+    }
+  }
+
+  const handleDeleteRun = async (runId: string) => {
+    if (!runId) return
+    const confirmed = await confirmToast(tr('toasts.confirmDelete', { id: runId }), {
+      title: t('backtestPageExtra.confirmDelete', language),
+      okText: t('backtestPageExtra.delete', language),
+      cancelText: t('backtestPageExtra.cancel', language),
+    })
+    if (!confirmed) return
+    try {
+      await api.deleteBacktestRun(runId)
+      if (selectedRunId === runId) {
+        setSelectedRunId(undefined)
+      }
+      setToast({ text: tr('toasts.deleteSuccess'), tone: 'success' })
+      await refreshRuns()
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : tr('toasts.deleteFailed')
+      setToast({ text: errMsg, tone: 'error' })
+    }
+  }
+
+  const handleReuseRun = async (runId: string) => {
+    try {
+      const first = await confirmToast(
+        language === 'zh'
+          ? `将复用 ${runId} 的回测参数创建新回测，是否继续？`
+          : `Reuse parameters from ${runId} to create a new backtest?`,
+        {
+          title: language === 'zh' ? '复用回测参数' : 'Reuse Backtest Config',
+          okText: language === 'zh' ? '继续' : 'Continue',
+          cancelText: language === 'zh' ? '取消' : 'Cancel',
+        }
+      )
+      if (!first) return
+
+      const second = await confirmToast(
+        language === 'zh'
+          ? '请再次确认：将立即启动一个新的回测任务。'
+          : 'Please confirm again: a new backtest run will start immediately.',
+        {
+          title: language === 'zh' ? '二次确认' : 'Final Confirmation',
+          okText: language === 'zh' ? '确认启动' : 'Start New Run',
+          cancelText: language === 'zh' ? '取消' : 'Cancel',
+        }
+      )
+      if (!second) return
+
+      const saved = await api.getBacktestConfig(runId)
+      const next: BacktestSavedConfig = {
+        ...saved,
+      }
+      // Always create a new run id.
+      delete next.run_id
+      delete next.user_id
+
+      setIsStarting(true)
+      const payload = await api.startBacktest(next)
+      setToast({ text: tr('toasts.startSuccess', { id: payload.run_id }), tone: 'success' })
+      setSelectedRunId(payload.run_id)
+      await refreshRuns()
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : tr('toasts.startFailed')
+      setToast({ text: errMsg, tone: 'error' })
+    } finally {
+      setIsStarting(false)
     }
   }
 
@@ -356,6 +442,8 @@ export function BacktestPage() {
               tr={tr}
               onSelectRun={setSelectedRunId}
               onToggleCompare={toggleCompare}
+              onReuseRun={handleReuseRun}
+              onDeleteRun={handleDeleteRun}
             />
           </div>
 

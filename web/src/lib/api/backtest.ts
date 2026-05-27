@@ -8,6 +8,7 @@ import type {
   BacktestMetrics,
   BacktestRunMetadata,
   BacktestKlinesResponse,
+  BacktestSavedConfig,
 } from '../../types'
 import { API_BASE, getAuthHeaders, handleJSONResponse } from './helpers'
 
@@ -96,6 +97,13 @@ export const backtestApi = {
       headers: getAuthHeaders(),
     })
     return handleJSONResponse<BacktestStatusPayload>(res)
+  },
+
+  async getBacktestConfig(runId: string): Promise<BacktestSavedConfig> {
+    const res = await fetch(`${API_BASE}/backtest/config?run_id=${runId}`, {
+      headers: getAuthHeaders(),
+    })
+    return handleJSONResponse<BacktestSavedConfig>(res)
   },
 
   async getBacktestEquity(

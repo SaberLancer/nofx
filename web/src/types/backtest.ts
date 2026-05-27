@@ -152,6 +152,11 @@ export interface BacktestStartConfig {
   };
 }
 
+export interface BacktestSavedConfig extends BacktestStartConfig {
+  run_id?: string;
+  user_id?: string;
+}
+
 // Kline data for backtest chart
 export interface BacktestKline {
   time: number;
