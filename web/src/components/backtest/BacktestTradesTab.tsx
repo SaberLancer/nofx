@@ -1,4 +1,12 @@
-import { useCallback, useMemo, useState, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { motion } from 'framer-motion'
 import { ArrowDown, ArrowUp, ArrowUpDown, Brain, Filter, RotateCcw } from 'lucide-react'
 import type { BacktestTradeEvent, DecisionRecord } from '../../types'
@@ -21,6 +29,43 @@ const selectStyle: CSSProperties = {
   background: '#1E2329',
   border: '1px solid #2B3139',
   color: '#EAECEF',
+}
+
+/** Fills parent flex area and scrolls children when content overflows. */
+function TradeListScrollArea({ children }: { children: ReactNode }) {
+  const shellRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const shell = shellRef.current
+    const scroll = scrollRef.current
+    if (!shell || !scroll) return
+
+    const sync = () => {
+      const h = shell.clientHeight
+      if (h > 0) {
+        scroll.style.height = `${h}px`
+        scroll.style.maxHeight = `${h}px`
+      }
+    }
+
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(shell)
+    return () => ro.disconnect()
+  }, [children])
+
+  return (
+    <div
+      ref={shellRef}
+      className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-lg"
+      style={{ border: '1px solid #2B3139' }}
+    >
+      <div ref={scrollRef} className="overflow-y-auto overscroll-contain">
+        {children}
+      </div>
+    </div>
+  )
 }
 
 function formatActionLabel(action: string, closeReason?: string): string {
@@ -121,18 +166,16 @@ function TradeTable({
 
   if (trades.length === 0) {
     return (
-      <div className="py-12 text-center" style={{ color: '#5E6673' }}>
-        {t('backtestTrades.noTrades', language)}
-      </div>
+      <TradeListScrollArea>
+        <div className="py-12 text-center" style={{ color: '#5E6673' }}>
+          {t('backtestTrades.noTrades', language)}
+        </div>
+      </TradeListScrollArea>
     )
   }
 
   return (
-    <div
-      className="rounded-lg overflow-hidden"
-      style={{ border: '1px solid #2B3139' }}
-    >
-      <div className="overflow-auto max-h-[min(70vh,720px)]">
+    <TradeListScrollArea>
         <table className="w-full text-sm">
           <thead
             className="sticky top-0 z-10"
@@ -276,17 +319,17 @@ function TradeTable({
             })}
           </tbody>
         </table>
-      </div>
-    </div>
+    </TradeListScrollArea>
   )
 }
 
 interface BacktestTradesTabProps {
   runId: string
   trades: BacktestTradeEvent[] | undefined
+  className?: string
 }
 
-export function BacktestTradesTab({ runId, trades }: BacktestTradesTabProps) {
+export function BacktestTradesTab({ runId, trades, className }: BacktestTradesTabProps) {
   const { language } = useLanguage()
   const allTrades = trades ?? []
 
@@ -417,10 +460,15 @@ export function BacktestTradesTab({ runId, trades }: BacktestTradesTabProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-4"
+      className={[
+        'flex flex-col h-full min-h-0 w-full gap-4 overflow-hidden',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       <div
-        className="flex flex-wrap items-end gap-3 p-4 rounded-lg"
+        className="flex flex-wrap items-end gap-3 p-4 rounded-lg shrink-0"
         style={{ background: '#1E2329', border: '1px solid #2B3139' }}
       >
         <div className="flex items-center gap-2 mr-1">
@@ -530,13 +578,15 @@ export function BacktestTradesTab({ runId, trades }: BacktestTradesTabProps) {
         </span>
       </div>
 
-      <TradeTable
-        trades={filteredTrades}
-        sortKey={sortKey}
-        sortDir={sortDir}
-        onPnlSort={handlePnlSort}
-        onActionClick={handleActionClick}
-      />
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <TradeTable
+          trades={filteredTrades}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onPnlSort={handlePnlSort}
+          onActionClick={handleActionClick}
+        />
+      </div>
 
       <DecisionDetailModal
         open={modalOpen}

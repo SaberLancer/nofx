@@ -604,7 +604,7 @@ export function BacktestChartTab({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-6"
+      className="space-y-6 max-h-[500px] overflow-y-auto overscroll-contain"
     >
       <div>
         <h4 className="text-sm font-medium mb-3" style={{ color: '#EAECEF' }}>

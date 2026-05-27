@@ -40,6 +40,8 @@ export interface BacktestPositionStatus {
   margin_used: number;
   stop_loss?: number;
   take_profit?: number;
+  /** Position open time (Unix ms) */
+  open_time?: number;
 }
 
 export interface BacktestStatusPayload {

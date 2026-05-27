@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef, useLayoutEffect, type FormEvent } from 'react'
 import useSWR from 'swr'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -64,6 +64,18 @@ export function BacktestPage() {
   const [compareRunIds, setCompareRunIds] = useState<string[]>([])
   const [isStarting, setIsStarting] = useState(false)
   const [toast, setToast] = useState<{ text: string; tone: 'info' | 'error' | 'success' } | null>(null)
+  const leftColumnRef = useRef<HTMLDivElement>(null)
+  const [leftColumnHeight, setLeftColumnHeight] = useState<number>()
+
+  useLayoutEffect(() => {
+    const el = leftColumnRef.current
+    if (!el) return
+    const sync = () => setLeftColumnHeight(el.offsetHeight)
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [selectedRunId, wizardStep])
 
   // Form state
   const [formState, setFormState] = useState<BacktestFormState>({
@@ -420,7 +432,7 @@ export function BacktestPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 xl:items-stretch">
           {/* Left: config + run list (run list keeps max-h-[300px]) */}
-          <div className="flex flex-col gap-4 min-h-0">
+          <div ref={leftColumnRef} className="flex flex-col gap-4 min-h-0">
             <BacktestConfigForm
               formState={formState}
               wizardStep={wizardStep}
@@ -448,7 +460,14 @@ export function BacktestPage() {
           </div>
 
           {/* Right: status + stats + tab card — column height matches left; tab body scrolls */}
-          <div className="xl:col-span-2 flex flex-col gap-4 min-h-0 h-full">
+          <div
+            className="xl:col-span-2 flex flex-col gap-4 min-h-0 overflow-hidden"
+            style={
+              leftColumnHeight != null && leftColumnHeight > 0
+                ? { height: leftColumnHeight, maxHeight: leftColumnHeight }
+                : undefined
+            }
+          >
             {!selectedRunId ? (
               <div
                 className="binance-card flex-1 min-h-0 flex items-center justify-center p-12"
@@ -624,7 +643,16 @@ export function BacktestPage() {
                     ))}
                   </div>
 
-                  <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4">
+                  <div
+                    className={`flex-1 min-h-0 p-4 flex flex-col ${
+                      viewTab === 'trades' ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'
+                    }`}
+                  >
+                    <div
+                      className={`flex-1 min-h-0 flex flex-col ${
+                        viewTab === 'trades' ? 'relative overflow-hidden' : ''
+                      }`}
+                    >
                     <AnimatePresence mode="wait">
                       {viewTab === 'overview' && (
                         <BacktestOverviewTab
@@ -651,6 +679,7 @@ export function BacktestPage() {
                           key={selectedRunId}
                           runId={selectedRunId}
                           trades={trades}
+                          className="absolute inset-0"
                         />
                       )}
 
@@ -663,6 +692,7 @@ export function BacktestPage() {
                         />
                       )}
                     </AnimatePresence>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { mutate } from 'swr'
 import { api } from '../lib/api'
 import { ChartTabs } from '../components/charts/ChartTabs'
@@ -147,13 +147,24 @@ export function TraderDashboardPage({
     const [positionsPageSize, setPositionsPageSize] = useState<number>(20)
     const [positionsCurrentPage, setPositionsCurrentPage] = useState<number>(1)
 
-    // Calculate paginated positions
-    const totalPositions = positions?.length || 0
+    // Calculate paginated positions (sorted by open time, newest first)
+    const sortedPositions = useMemo(() => {
+        if (!positions?.length) return []
+        return [...positions].sort((a, b) => {
+            const ta = a.open_time ?? 0
+            const tb = b.open_time ?? 0
+            if (ta !== tb) return tb - ta
+            if (a.symbol !== b.symbol) return a.symbol.localeCompare(b.symbol)
+            return a.side.localeCompare(b.side)
+        })
+    }, [positions])
+
+    const totalPositions = sortedPositions.length
     const totalPositionPages = Math.ceil(totalPositions / positionsPageSize)
-    const paginatedPositions = positions?.slice(
+    const paginatedPositions = sortedPositions.slice(
         (positionsCurrentPage - 1) * positionsPageSize,
         positionsCurrentPage * positionsPageSize
-    ) || []
+    )
 
     // Reset page when positions change
     useEffect(() => {
@@ -587,13 +598,13 @@ export function TraderDashboardPage({
                                 <h2 className="text-lg font-bold flex items-center gap-2 text-nofx-text-main uppercase tracking-wide">
                                     <span className="text-blue-500">◈</span> {t('currentPositions', language)}
                                 </h2>
-                                {positions && positions.length > 0 && (
+                                {sortedPositions.length > 0 && (
                                     <div className="text-xs px-2 py-1 rounded bg-nofx-gold/10 text-nofx-gold border border-nofx-gold/20 font-mono shadow-[0_0_10px_rgba(240,185,11,0.1)]">
-                                        {positions.length} {t('active', language)}
+                                        {sortedPositions.length} {t('active', language)}
                                     </div>
                                 )}
                             </div>
-                            {positions && positions.length > 0 ? (
+                            {sortedPositions.length > 0 ? (
                                 <div>
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-xs">

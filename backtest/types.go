@@ -184,4 +184,5 @@ type PositionStatus struct {
 	MarginUsed       float64 `json:"margin_used"`
 	StopLoss         float64 `json:"stop_loss,omitempty"`
 	TakeProfit       float64 `json:"take_profit,omitempty"`
+	OpenTime         int64   `json:"open_time,omitempty"` // Position open time (ms)
 }

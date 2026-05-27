@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { useMemo } from 'react'
 import {
   TrendingUp,
   TrendingDown,
@@ -157,12 +158,23 @@ export function PositionsDisplay({
   currentTimeMs,
   decisionTf,
 }: PositionsDisplayProps) {
-  if (!positions || positions.length === 0) {
+  const sortedPositions = useMemo(() => {
+    if (!positions?.length) return []
+    return [...positions].sort((a, b) => {
+      const ta = a.open_time ?? 0
+      const tb = b.open_time ?? 0
+      if (ta !== tb) return tb - ta
+      if (a.symbol !== b.symbol) return a.symbol.localeCompare(b.symbol)
+      return a.side.localeCompare(b.side)
+    })
+  }, [positions])
+
+  if (sortedPositions.length === 0) {
     return null
   }
 
-  const totalUnrealizedPnL = positions.reduce((sum, p) => sum + p.unrealized_pnl, 0)
-  const totalMargin = positions.reduce((sum, p) => sum + p.margin_used, 0)
+  const totalUnrealizedPnL = sortedPositions.reduce((sum, p) => sum + p.unrealized_pnl, 0)
+  const totalMargin = sortedPositions.reduce((sum, p) => sum + p.margin_used, 0)
 
   return (
     <div
@@ -179,7 +191,7 @@ export function PositionsDisplay({
             className="px-1.5 py-0.5 rounded text-xs"
             style={{ background: '#F0B90B20', color: '#F0B90B' }}
           >
-            {positions.length}
+            {sortedPositions.length}
           </span>
         </div>
         <div className="flex flex-col items-end gap-0.5 text-xs">
@@ -207,7 +219,7 @@ export function PositionsDisplay({
       </div>
 
       <div className="space-y-1.5">
-        {positions.map((pos) => {
+        {sortedPositions.map((pos) => {
           const isLong = pos.side === 'long'
           const pnlColor = pos.unrealized_pnl >= 0 ? '#0ECB81' : '#F6465D'
 

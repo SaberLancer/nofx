@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -312,8 +313,19 @@ func (r *Runner) StatusPayload() StatusPayload {
 			MarginUsed:       pos.MarginUsed,
 			StopLoss:         pos.StopLoss,
 			TakeProfit:       pos.TakeProfit,
+			OpenTime:         pos.OpenTime,
 		})
 	}
+
+	sort.Slice(positions, func(i, j int) bool {
+		if positions[i].OpenTime != positions[j].OpenTime {
+			return positions[i].OpenTime > positions[j].OpenTime
+		}
+		if positions[i].Symbol != positions[j].Symbol {
+			return positions[i].Symbol < positions[j].Symbol
+		}
+		return positions[i].Side < positions[j].Side
+	})
 
 	payload := StatusPayload{
 		RunID:          r.cfg.RunID,

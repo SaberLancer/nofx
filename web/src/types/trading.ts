@@ -44,6 +44,8 @@ export interface Position {
   take_profit?: number
   unprotected?: boolean
   protection_note?: string
+  /** Position open time (Unix ms), used for display ordering */
+  open_time?: number
 }
 
 export interface DecisionAction {

@@ -3,6 +3,7 @@ package trader
 import (
 	"fmt"
 	"math"
+	"sort"
 	"nofx/telemetry"
 	"nofx/kernel"
 	"nofx/logger"
@@ -221,6 +222,24 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		// Calculate P&L percentage (based on margin)
 		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
+		openTime := int64(0)
+		if at.store != nil {
+			if dbPos, err := at.store.Position().GetOpenPositionBySymbol(at.id, symbol, side); err == nil && dbPos != nil && dbPos.EntryTime > 0 {
+				openTime = dbPos.EntryTime
+			}
+		}
+		if openTime == 0 {
+			if createdTime, ok := pos["createdTime"].(int64); ok && createdTime > 0 {
+				openTime = createdTime
+			}
+		}
+		if openTime == 0 {
+			posKey := symbol + "_" + side
+			if ts, ok := at.positionFirstSeenTime[posKey]; ok && ts > 0 {
+				openTime = ts
+			}
+		}
+
 		item := map[string]interface{}{
 			"symbol":             symbol,
 			"side":               side,
@@ -232,6 +251,7 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 			"unrealized_pnl_pct": pnlPct,
 			"liquidation_price":  liquidationPrice,
 			"margin_used":        marginUsed,
+			"open_time":          openTime,
 		}
 		if info, ok := at.isUnprotected(symbol, side); ok {
 			item["unprotected"] = true
@@ -245,6 +265,22 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		}
 		result = append(result, item)
 	}
+
+	sort.Slice(result, func(i, j int) bool {
+		ti, _ := result[i]["open_time"].(int64)
+		tj, _ := result[j]["open_time"].(int64)
+		if ti != tj {
+			return ti > tj
+		}
+		si, _ := result[i]["symbol"].(string)
+		sj, _ := result[j]["symbol"].(string)
+		if si != sj {
+			return si < sj
+		}
+		ai, _ := result[i]["side"].(string)
+		aj, _ := result[j]["side"].(string)
+		return ai < aj
+	})
 
 	return result, nil
 }
