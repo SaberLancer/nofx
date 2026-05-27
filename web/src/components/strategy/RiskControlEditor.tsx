@@ -249,6 +249,79 @@ export function RiskControlEditor({
         </div>
       </div>
 
+      {/* Stop-loss distance & structure */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Shield className="w-5 h-5" style={{ color: '#F6465D' }} />
+          <h3 className="font-medium" style={{ color: '#EAECEF' }}>
+            {ts(riskControl.stopLossStructure, language)}
+          </h3>
+        </div>
+        <p className="text-xs mb-4" style={{ color: '#848E9C' }}>
+          {ts(riskControl.stopLossStructureDesc, language)}
+        </p>
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <NumberField
+            label={ts(riskControl.btcEthMinStopDist, language)}
+            desc={ts(riskControl.btcEthMinStopDistDesc, language)}
+            value={config.btc_eth_min_stop_loss_dist_pct ?? 0.5}
+            onChange={(v) => updateField('btc_eth_min_stop_loss_dist_pct', v)}
+            disabled={disabled}
+            min={0.1}
+            max={5}
+            step={0.05}
+            suffix="%"
+          />
+          <NumberField
+            label={ts(riskControl.altcoinMinStopDist, language)}
+            desc={ts(riskControl.altcoinMinStopDistDesc, language)}
+            value={config.altcoin_min_stop_loss_dist_pct ?? 0.8}
+            onChange={(v) => updateField('altcoin_min_stop_loss_dist_pct', v)}
+            disabled={disabled}
+            min={0.1}
+            max={5}
+            step={0.05}
+            suffix="%"
+          />
+          <NumberField
+            label={ts(riskControl.structWickBuffer, language)}
+            desc={ts(riskControl.structWickBufferDesc, language)}
+            value={config.struct_stop_wick_buffer_pct ?? 0.15}
+            onChange={(v) => updateField('struct_stop_wick_buffer_pct', v)}
+            disabled={disabled}
+            min={0.05}
+            max={1}
+            step={0.05}
+            suffix="%"
+          />
+          <div
+            className="p-4 rounded-lg flex flex-col justify-center"
+            style={{ background: '#0B0E11', border: '1px solid #2B3139' }}
+          >
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.enforce_struct_stop !== false}
+                onChange={(e) => updateField('enforce_struct_stop', e.target.checked)}
+                disabled={disabled}
+                className="accent-yellow-500"
+              />
+              <span className="text-sm" style={{ color: '#EAECEF' }}>
+                {ts(riskControl.enforceStructStop, language)}
+              </span>
+            </label>
+            <p className="text-xs mt-2" style={{ color: '#848E9C' }}>
+              {ts(riskControl.enforceStructStopDesc, language)}
+            </p>
+          </div>
+        </div>
+        <p className="text-[10px]" style={{ color: '#5E6673' }}>
+          {ts(riskControl.stopLossValidated, language)} · 1:
+          {config.min_risk_reward_ratio ?? 3}
+        </p>
+      </div>
+
       {/* Position PnL% rules */}
       <div>
         <div className="flex items-center gap-2 mb-2">

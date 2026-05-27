@@ -160,6 +160,7 @@ type StatusPayload struct {
 	ProgressPct    float64           `json:"progress_pct"`
 	ProcessedBars  int               `json:"processed_bars"`
 	CurrentTime    int64             `json:"current_time"`
+	DecisionTF     string            `json:"decision_tf,omitempty"`
 	DecisionCycle  int               `json:"decision_cycle"`
 	Equity         float64           `json:"equity"`
 	UnrealizedPnL  float64           `json:"unrealized_pnl"`

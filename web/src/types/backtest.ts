@@ -48,6 +48,7 @@ export interface BacktestStatusPayload {
   progress_pct: number;
   processed_bars: number;
   current_time: number;
+  decision_tf?: string;
   decision_cycle: number;
   equity: number;
   unrealized_pnl: number;

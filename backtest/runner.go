@@ -321,6 +321,7 @@ func (r *Runner) StatusPayload() StatusPayload {
 		ProgressPct:    progress,
 		ProcessedBars:  snapshot.BarIndex,
 		CurrentTime:    snapshot.BarTimestamp,
+		DecisionTF:     r.cfg.DecisionTimeframe,
 		DecisionCycle:  snapshot.DecisionCycle,
 		Equity:         snapshot.Equity,
 		UnrealizedPnL:  snapshot.UnrealizedPnL,

@@ -23,7 +23,7 @@ func TestLeverageFallback(t *testing.T) {
 				Leverage:        20, // Exceeds limit
 				PositionSizeUSD: 100,
 				StopLoss:        50,
-				TakeProfit:      200,
+				TakeProfit:      350,
 			},
 			accountEquity:   100,
 			btcEthLeverage:  10,
@@ -39,7 +39,7 @@ func TestLeverageFallback(t *testing.T) {
 				Leverage:        20, // Exceeds limit
 				PositionSizeUSD: 1000,
 				StopLoss:        90000,
-				TakeProfit:      110000,
+				TakeProfit:      130000,
 			},
 			accountEquity:   100,
 			btcEthLeverage:  10, // Limit 10x
@@ -55,7 +55,7 @@ func TestLeverageFallback(t *testing.T) {
 				Leverage:        5, // Not exceeded
 				PositionSizeUSD: 500,
 				StopLoss:        4000,
-				TakeProfit:      3000,
+				TakeProfit:      2000,
 			},
 			accountEquity:   100,
 			btcEthLeverage:  10,
@@ -71,7 +71,7 @@ func TestLeverageFallback(t *testing.T) {
 				Leverage:        0, // Invalid
 				PositionSizeUSD: 100,
 				StopLoss:        50,
-				TakeProfit:      200,
+				TakeProfit:      350,
 			},
 			accountEquity:   100,
 			btcEthLeverage:  10,
@@ -84,7 +84,17 @@ func TestLeverageFallback(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Use default position value ratios for testing (10x for BTC/ETH, 1.5x for altcoins)
-			err := validateDecision(&tt.decision, tt.accountEquity, tt.btcEthLeverage, tt.altcoinLeverage, 10.0, 1.5)
+			protection := OpenProtectionParams{
+				MinRiskRewardRatio:            3.0,
+				AltcoinMinStopLossDistancePct: 0.8,
+				BtcEthMinStopLossDistancePct:  0.5,
+			}
+			marketPrices := map[string]float64{
+				"SOLUSDT": 100,
+				"BTCUSDT": 100000,
+				"ETHUSDT": 3500,
+			}
+			err := validateDecision(&tt.decision, tt.accountEquity, tt.btcEthLeverage, tt.altcoinLeverage, 10.0, 1.5, protection, marketPrices)
 
 			// Check error status
 			if (err != nil) != tt.wantError {

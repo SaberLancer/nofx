@@ -186,6 +186,41 @@ export const riskControl = {
   peakMinForPullbackDesc: { zh: 'Peak PnL% 至少达到此值才启用峰值回撤规则', en: 'Peak PnL% must reach this before pullback rule applies', es: 'Mínimo peak' },
   peakPullbackPts: { zh: '峰值回撤幅度', en: 'Peak Pullback (pp)', es: 'Pullback (pp)' },
   peakPullbackPtsDesc: { zh: '从 Peak PnL% 回撤多少个百分点时减仓/平仓', en: 'Reduce/exit when drawdown from peak ≥ this many pp', es: 'Puntos desde pico' },
+  stopLossStructure: { zh: '止损与结构位', en: 'Stop-Loss & Structure', es: 'Stop y Estructura' },
+  stopLossStructureDesc: {
+    zh: '开仓价格止损的最小价距与结构位规则；后端会校验价距与盈亏比，并写入 AI 系统提示',
+    en: 'Min price stop distance and structure rules on open; backend validates distance & R:R and injects into system prompt',
+    es: 'Distancia mínima y estructura al abrir',
+  },
+  btcEthMinStopDist: { zh: 'BTC/ETH 最小止损价距', en: 'BTC/ETH Min SL Distance', es: 'BTC/ETH SL Mín.' },
+  btcEthMinStopDistDesc: {
+    zh: '相对入场价的标的涨跌幅下限（%），默认 0.5',
+    en: 'Min underlying price move from entry to stop_loss (%)',
+    es: 'Distancia mínima %',
+  },
+  altcoinMinStopDist: { zh: '山寨最小止损价距', en: 'Altcoin Min SL Distance', es: 'Altcoin SL Mín.' },
+  altcoinMinStopDistDesc: {
+    zh: '相对入场价的标的涨跌幅下限（%），默认 0.8',
+    en: 'Min underlying price move for altcoins (%)',
+    es: 'Distancia mínima altcoins',
+  },
+  structWickBuffer: { zh: '结构位防插针缓冲', en: 'Structure Wick Buffer', es: 'Buffer Mecha' },
+  structWickBufferDesc: {
+    zh: '摆动高/低之外额外缓冲（%），默认 0.15',
+    en: 'Extra % beyond swing high/low for wick protection',
+    es: 'Buffer % sobre swing',
+  },
+  enforceStructStop: { zh: '强制结构位止损', en: 'Enforce Structure Stops', es: 'Forzar Estructura' },
+  enforceStructStopDesc: {
+    zh: '开启后 Prompt 要求止损必须基于主周期结构高低点；关闭则仅校验最小价距与盈亏比',
+    en: 'When on, prompt requires structure-TF stops; when off, only min distance & R:R are enforced',
+    es: 'Exigir stops estructurales en prompt',
+  },
+  stopLossValidated: {
+    zh: '开仓校验（代码强制）',
+    en: 'Validated on open (code)',
+    es: 'Validado al abrir',
+  },
 };
 
 // ============================================================================

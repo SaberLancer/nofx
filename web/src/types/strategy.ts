@@ -234,4 +234,12 @@ export interface RiskControlConfig {
   stop_loss_pnl_pct?: number;
   peak_min_for_pullback?: number;
   peak_pullback_pts?: number;
+
+  /** Min stop-loss distance (% of entry price, underlying move) */
+  btc_eth_min_stop_loss_dist_pct?: number;
+  altcoin_min_stop_loss_dist_pct?: number;
+  /** Buffer above/below structure swing high/low (%) */
+  struct_stop_wick_buffer_pct?: number;
+  /** Require structure-timeframe stop placement in prompt (default true) */
+  enforce_struct_stop?: boolean;
 }

@@ -194,6 +194,8 @@ export const backtestTranslations = {
         bestSymbol: 'Best Symbol',
         decisionsSnapshotHint:
           'Decision cards show PnL% at that cycle; position cards above refresh every ~2s with live marks.',
+        klineTime: 'K-line time',
+        klineTimeHint: 'Bar timestamp used for mark price on this refresh',
       },
     backtestChart: {
         noTrades: 'No trades to display',
@@ -434,6 +436,8 @@ export const backtestTranslations = {
         bestSymbol: '最佳币种',
         decisionsSnapshotHint:
           '决策卡片为当时周期快照；上方持仓卡片约每 2 秒按最新价刷新。',
+        klineTime: 'K线时间',
+        klineTimeHint: '本次刷新标记价所对应的 K 线开盘时刻',
       },
     backtestTrades: {
         noTrades: '暂无交易记录',
@@ -678,6 +682,8 @@ export const backtestTranslations = {
         bestSymbol: 'Best Symbol',
         decisionsSnapshotHint:
           'Decision cards show PnL% at that cycle; position cards above refresh every ~2s with live marks.',
+        klineTime: 'K-line time',
+        klineTimeHint: 'Bar timestamp used for mark price on this refresh',
       },
     backtestChart: {
         noTrades: 'No trades to display',

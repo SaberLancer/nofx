@@ -2,6 +2,7 @@
 .idea/
 *.iml
 *.xml
+.specstory/
 
 # AI 工具
 .claude/

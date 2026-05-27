@@ -160,6 +160,15 @@ func (c *StrategyConfig) ClampLimits() {
 	if c.RiskControl.PeakPullbackPts != 0 {
 		c.RiskControl.PeakPullbackPts = clampFloat(c.RiskControl.PeakPullbackPts, 0.5, 50)
 	}
+	if c.RiskControl.BtcEthMinStopLossDistPct != 0 {
+		c.RiskControl.BtcEthMinStopLossDistPct = clampFloat(c.RiskControl.BtcEthMinStopLossDistPct, MinStopLossDistPctFloor, MaxStopLossDistPctCeil)
+	}
+	if c.RiskControl.AltcoinMinStopLossDistPct != 0 {
+		c.RiskControl.AltcoinMinStopLossDistPct = clampFloat(c.RiskControl.AltcoinMinStopLossDistPct, MinStopLossDistPctFloor, MaxStopLossDistPctCeil)
+	}
+	if c.RiskControl.StructStopWickBufferPct != 0 {
+		c.RiskControl.StructStopWickBufferPct = clampFloat(c.RiskControl.StructStopWickBufferPct, MinStructStopWickBufferPctFloor, MaxStructStopWickBufferPctCeil)
+	}
 	if c.RiskControl.LockProfitSecondPnLPct > 0 && c.RiskControl.LockProfitPnLPct > 0 &&
 		c.RiskControl.LockProfitSecondPnLPct < c.RiskControl.LockProfitPnLPct {
 		c.RiskControl.LockProfitSecondPnLPct = c.RiskControl.LockProfitPnLPct
@@ -521,6 +530,9 @@ func StrategyClampWarnings(before, after StrategyConfig, lang string) []string {
 	appendFloat("BTC/ETH 最大仓位价值倍数", "btc_eth_max_position_value_ratio", before.RiskControl.BTCETHMaxPositionValueRatio, after.RiskControl.BTCETHMaxPositionValueRatio)
 	appendFloat("山寨币最大仓位价值倍数", "altcoin_max_position_value_ratio", before.RiskControl.AltcoinMaxPositionValueRatio, after.RiskControl.AltcoinMaxPositionValueRatio)
 	appendFloat("最小盈亏比", "min_risk_reward_ratio", before.RiskControl.MinRiskRewardRatio, after.RiskControl.MinRiskRewardRatio)
+	appendFloat("BTC/ETH 最小止损价距%", "btc_eth_min_stop_loss_dist_pct", before.RiskControl.BtcEthMinStopLossDistPct, after.RiskControl.BtcEthMinStopLossDistPct)
+	appendFloat("山寨最小止损价距%", "altcoin_min_stop_loss_dist_pct", before.RiskControl.AltcoinMinStopLossDistPct, after.RiskControl.AltcoinMinStopLossDistPct)
+	appendFloat("结构止损缓冲%", "struct_stop_wick_buffer_pct", before.RiskControl.StructStopWickBufferPct, after.RiskControl.StructStopWickBufferPct)
 	appendFloat("最大保证金使用率", "max_margin_usage", before.RiskControl.MaxMarginUsage, after.RiskControl.MaxMarginUsage)
 	appendFloat("最小开仓金额", "min_position_size", before.RiskControl.MinPositionSize, after.RiskControl.MinPositionSize)
 	appendInt("最低置信度", "min_confidence", before.RiskControl.MinConfidence, after.RiskControl.MinConfidence)
@@ -904,6 +916,14 @@ type RiskControlConfig struct {
 	// Min AI confidence to open position (AI guided)
 	MinConfidence int `json:"min_confidence"`
 
+	// Min stop-loss distance as underlying price % (AI guided + validated on open)
+	BtcEthMinStopLossDistPct  float64 `json:"btc_eth_min_stop_loss_dist_pct,omitempty"`
+	AltcoinMinStopLossDistPct float64 `json:"altcoin_min_stop_loss_dist_pct,omitempty"`
+	// Extra buffer above/below structure swing for wick protection (%)
+	StructStopWickBufferPct float64 `json:"struct_stop_wick_buffer_pct,omitempty"`
+	// When true (default), prompt requires structure-TF stop placement
+	EnforceStructStop *bool `json:"enforce_struct_stop,omitempty"`
+
 	// Position PnL% rules (margin-based unrealized PnL %, AI guided — see user prompt each cycle)
 	LockProfitPnLPct       float64 `json:"lock_profit_pnl_pct,omitempty"`        // e.g. 8 → start partial reduce
 	LockProfitSecondPnLPct float64 `json:"lock_profit_second_pnl_pct,omitempty"` // e.g. 12 → second tier reduce
@@ -999,6 +1019,9 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			MinPositionSize:              12,  // Min 12 USDT per position (CODE ENFORCED)
 			MinRiskRewardRatio:           3.0, // Min 3:1 profit/loss ratio (AI guided)
 			MinConfidence:                75,  // Min 75% confidence (AI guided)
+			BtcEthMinStopLossDistPct:     DefaultBtcEthMinStopLossDistPct,
+			AltcoinMinStopLossDistPct:    DefaultAltcoinMinStopLossDistPct,
+			StructStopWickBufferPct:      DefaultStructStopWickBufferPct,
 			LockProfitPnLPct:             8,
 			LockProfitSecondPnLPct:       12,
 			LockProfitReduceRatio:        0.3,

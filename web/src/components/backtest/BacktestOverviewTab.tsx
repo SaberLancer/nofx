@@ -130,12 +130,33 @@ export function ProgressRing({ progress, size = 120 }: ProgressRingProps) {
 
 // ============ Positions Display ============
 
+function formatKlineBarTime(ms: number | undefined, language: Language): string {
+  if (!ms || ms <= 0) return '—'
+  return new Date(ms).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+}
+
 interface PositionsDisplayProps {
   positions: BacktestPositionStatus[]
   language: Language
+  /** Bar open time (ms) used for mark price on this refresh */
+  currentTimeMs?: number
+  decisionTf?: string
 }
 
-export function PositionsDisplay({ positions, language }: PositionsDisplayProps) {
+export function PositionsDisplay({
+  positions,
+  language,
+  currentTimeMs,
+  decisionTf,
+}: PositionsDisplayProps) {
   if (!positions || positions.length === 0) {
     return null
   }
@@ -161,7 +182,16 @@ export function PositionsDisplay({ positions, language }: PositionsDisplayProps)
             {positions.length}
           </span>
         </div>
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex flex-col items-end gap-0.5 text-xs">
+          <span
+            className="font-mono text-[10px]"
+            style={{ color: '#F0B90B' }}
+            title={t('backtestOverview.klineTimeHint', language)}
+          >
+            {t('backtestOverview.klineTime', language)}: {formatKlineBarTime(currentTimeMs, language)}
+            {decisionTf ? ` · ${decisionTf}` : ''}
+          </span>
+          <div className="flex items-center gap-3">
           <span style={{ color: '#848E9C' }}>
             {t('backtestOverview.margin', language)}: ${totalMargin.toFixed(2)}
           </span>
@@ -172,6 +202,7 @@ export function PositionsDisplay({ positions, language }: PositionsDisplayProps)
             {t('backtestOverview.unrealized', language)}: {totalUnrealizedPnL >= 0 ? '+' : ''}
             ${totalUnrealizedPnL.toFixed(2)}
           </span>
+          </div>
         </div>
       </div>
 

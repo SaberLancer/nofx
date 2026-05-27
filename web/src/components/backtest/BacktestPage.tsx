@@ -466,7 +466,12 @@ export function BacktestPage() {
 
                   {/* Real-time Positions Display */}
                   {status?.positions && status.positions.length > 0 && (
-                    <PositionsDisplay positions={status.positions} language={language} />
+                    <PositionsDisplay
+                      positions={status.positions}
+                      language={language}
+                      currentTimeMs={status.current_time}
+                      decisionTf={status.decision_tf}
+                    />
                   )}
                 </div>
 

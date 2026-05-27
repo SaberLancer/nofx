@@ -64,12 +64,20 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 		accountEquity*btcEthPosValueRatio, accountEquity, btcEthPosValueRatio))
 	sb.WriteString(fmt.Sprintf("- Max Margin Usage: ≤%.0f%%\n", riskControl.MaxMarginUsage*100))
 	sb.WriteString(fmt.Sprintf("- Min Position Size: ≥%.0f USDT\n\n", riskControl.MinPositionSize))
+	sb.WriteString("## CODE ENFORCED (Open protection — stop_loss / take_profit):\n")
+	sb.WriteString(fmt.Sprintf("- BTC/ETH min stop distance: ≥%.2f%% | Altcoins: ≥%.2f%% (underlying price move)\n",
+		riskControl.EffectiveBtcEthMinStopLossDistPct(), riskControl.EffectiveAltcoinMinStopLossDistPct()))
+	sb.WriteString(fmt.Sprintf("- Min risk-reward on open: ≥1:%.1f\n\n", riskControl.MinRiskRewardRatio))
 
 	sb.WriteString("## AI GUIDED (Recommended, you should follow):\n")
 	sb.WriteString(fmt.Sprintf("- Trading Leverage: Altcoins max %dx | BTC/ETH max %dx\n",
 		riskControl.AltcoinMaxLeverage, riskControl.BTCETHMaxLeverage))
 	sb.WriteString(fmt.Sprintf("- Risk-Reward Ratio: ≥1:%.1f (take_profit / stop_loss)\n", riskControl.MinRiskRewardRatio))
 	sb.WriteString(fmt.Sprintf("- Min Confidence: ≥%d to open position\n\n", riskControl.MinConfidence))
+
+	primaryTF := e.config.Indicators.Klines.PrimaryTimeframe
+	longerTF := e.config.Indicators.Klines.LongerTimeframe
+	AppendConfiguredStopLossRules(&sb, riskControl, lang, primaryTF, longerTF)
 
 	AppendConfiguredPnLThresholds(&sb, riskControl, lang)
 
