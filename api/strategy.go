@@ -105,6 +105,14 @@ func (s *Server) handleGetStrategies(c *gin.Context) {
 		return
 	}
 
+	lang := c.Query("lang")
+	if lang == "" {
+		lang = "zh"
+	}
+	if err := s.ensureShortTermPresetStrategies(userID, lang); err != nil {
+		logger.Warnf("Failed to ensure short-term preset strategies for user %s: %v", userID, err)
+	}
+
 	strategies, err := s.store.Strategy().List(userID)
 	if err != nil {
 		SafeInternalError(c, "Failed to get strategy list", err)

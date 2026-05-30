@@ -309,14 +309,7 @@ func (s *Server) createDefaultStrategies(userID string, lang string) error {
 		locale = locales["en"]
 	}
 
-	type strategyDef struct {
-		name        string
-		description string
-		isActive    bool
-		applyConfig func(*store.StrategyConfig)
-	}
-
-	definitions := []strategyDef{
+	definitions := []strategyPresetDef{
 		{
 			name:        locale.balanced.name,
 			description: locale.balanced.description,
@@ -358,6 +351,7 @@ func (s *Server) createDefaultStrategies(userID string, lang string) error {
 			},
 		},
 	}
+	definitions = append(definitions, shortTermPresetDefinitions(lang)...)
 
 	// GetDefaultStrategyConfig only supports zh/en; map id -> en
 	configLang := lang
@@ -368,19 +362,9 @@ func (s *Server) createDefaultStrategies(userID string, lang string) error {
 	// Pre-build all strategy objects before opening the transaction
 	var strategies []*store.Strategy
 	for _, def := range definitions {
-		config := store.GetDefaultStrategyConfig(configLang)
-		def.applyConfig(&config)
-
-		strategy := &store.Strategy{
-			ID:          uuid.New().String(),
-			UserID:      userID,
-			Name:        def.name,
-			Description: def.description,
-			IsActive:    def.isActive,
-			IsDefault:   false,
-		}
-		if err := strategy.SetConfig(&config); err != nil {
-			return fmt.Errorf("failed to set config for strategy %q: %w", def.name, err)
+		strategy, err := buildStrategyFromPreset(userID, def, configLang)
+		if err != nil {
+			return err
 		}
 		strategies = append(strategies, strategy)
 	}

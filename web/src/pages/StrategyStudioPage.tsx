@@ -175,9 +175,12 @@ export function StrategyStudioPage() {
   const fetchStrategies = useCallback(async () => {
     if (!token) return
     try {
-      const response = await fetch(`${API_BASE}/api/strategies`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const response = await fetch(
+        `${API_BASE}/api/strategies?lang=${language}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      )
       if (!response.ok) throw new Error('Failed to fetch strategies')
       const data = await response.json()
       const nextStrategies: Strategy[] = data.strategies || []
