@@ -171,12 +171,15 @@ export interface HistoricalPosition {
   entry_quantity: number
   entry_price: number
   entry_order_id: string
-  entry_time: string
+  entry_time: string | number
   exit_price: number
   exit_order_id: string
-  exit_time: string
+  exit_time: string | number
   realized_pnl: number
+  net_realized_pnl?: number
+  pnl_ratio?: number
   fee: number
+  funding_fee?: number
   leverage: number
   status: string
   close_reason: string

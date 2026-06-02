@@ -29,6 +29,7 @@ type OKXTrade struct {
 	IsMaker     bool
 	OrderType   string
 	OrderAction string // open_long, open_short, close_long, close_short
+	BillID      string // OKX billId for pagination
 }
 
 // GetTrades retrieves trade/fill records from OKX
@@ -126,6 +127,7 @@ func (t *OKXTrader) GetTrades(startTime time.Time, limit int) ([]OKXTrade, error
 			Symbol:      symbol,
 			TradeID:     fill.TradeID,
 			OrderID:     fill.OrdID,
+			BillID:      fill.BillID,
 			Side:        fill.Side,
 			PosSide:     fill.PosSide,
 			FillPrice:   fillPrice,
@@ -268,6 +270,73 @@ func (t *OKXTrader) SyncOrdersFromOKX(traderID string, exchangeID string, exchan
 	}
 
 	logger.Infof("✅ OKX order sync completed: %d new trades synced", syncedCount)
+
+	if err := t.syncClosedPositions(traderID, exchangeID, exchangeType, st); err != nil {
+		logger.Infof("⚠️  OKX closed position sync failed: %v", err)
+	}
+	return nil
+}
+
+func (t *OKXTrader) syncClosedPositions(traderID, exchangeID, exchangeType string, st *store.Store) error {
+	if st == nil {
+		return nil
+	}
+	posStore := st.Position()
+	closedCount, err := posStore.CountClosedPositions(traderID)
+	if err != nil {
+		return err
+	}
+
+	var start time.Time
+	if closedCount == 0 {
+		// First import: fetch latest N closes without time filter.
+		start = time.Time{}
+	} else {
+		lastExitMs, err := posStore.GetLastClosedPositionTime(traderID)
+		if err != nil {
+			return err
+		}
+		start = time.UnixMilli(lastExitMs).UTC().Add(-2 * time.Hour)
+	}
+
+	records, err := t.GetClosedPnL(start, 100)
+	if err != nil {
+		return err
+	}
+	logger.Infof("📜 OKX positions-history [%s]: fetched %d rows (local closed=%d)", traderID, len(records), closedCount)
+	if len(records) == 0 {
+		return nil
+	}
+
+	storeRecords := make([]store.ClosedPnLRecord, 0, len(records))
+	for _, r := range records {
+		if r.Symbol == "" || r.ExitPrice <= 0 || r.EntryPrice <= 0 || r.Quantity <= 0 {
+			continue
+		}
+		storeRecords = append(storeRecords, store.ClosedPnLRecord{
+			Symbol:         market.Normalize(r.Symbol),
+			Side:           r.Side,
+			EntryPrice:     r.EntryPrice,
+			ExitPrice:      r.ExitPrice,
+			Quantity:       r.Quantity,
+			RealizedPnL:    r.RealizedPnL,
+			NetRealizedPnL: r.NetRealizedPnL,
+			PnlRatio:       r.PnlRatio,
+			Fee:            r.Fee,
+			FundingFee:     r.FundingFee,
+			Leverage:       r.Leverage,
+			EntryTime:      r.EntryTime.UTC().UnixMilli(),
+			ExitTime:       r.ExitTime.UTC().UnixMilli(),
+			OrderID:        r.OrderID,
+			CloseType:      r.CloseType,
+			ExchangeID:     r.ExchangeID,
+		})
+	}
+	created, skipped, err := posStore.SyncClosedPositions(traderID, exchangeID, exchangeType, storeRecords)
+	if err != nil {
+		return err
+	}
+	logger.Infof("📜 OKX closed position sync [%s]: %d created, %d skipped (from %d)", traderID, created, skipped, len(storeRecords))
 	return nil
 }
 

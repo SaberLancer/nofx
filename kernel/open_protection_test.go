@@ -9,6 +9,8 @@ func TestValidateOpenProtection_SOLShort(t *testing.T) {
 		MinRiskRewardRatio:            3.0,
 		BtcEthMinStopLossDistancePct:  0.5,
 		AltcoinMinStopLossDistancePct: 0.8,
+		StopLossEnabled:               true,
+		TakeProfitEnabled:             true,
 	}
 	entry := 84.1032
 
@@ -29,6 +31,8 @@ func TestValidateOpenProtection_RR(t *testing.T) {
 	p := OpenProtectionParams{
 		MinRiskRewardRatio:            3.0,
 		AltcoinMinStopLossDistancePct: 0.8,
+		StopLossEnabled:               true,
+		TakeProfitEnabled:             true,
 	}
 	entry := 100.0
 	// SL 0.8%, TP only 1% → RR 1.25 < 3

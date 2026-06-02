@@ -3,6 +3,10 @@ import type { DecisionRecord, DecisionAction } from '../../types'
 import { t, type Language } from '../../i18n/translations'
 import { isPreDecisionSkipped } from '../../lib/decision'
 import {
+  buildCycleDecisionItems,
+  isUnavailableAction,
+} from '../../lib/decisionDisplay'
+import {
   fixReasoningPnLDisplay,
   parseMarginPnLFromPrompt,
 } from '../../lib/fixReasoningPnL'
@@ -13,6 +17,7 @@ import {
   symbolsInDecision,
   type LivePositionPnL,
 } from '../../lib/positionPnLCompare'
+import { formatDecisionTimestamps, formatBeijingDateTime } from '../../utils/format'
 
 interface DecisionCardProps {
   decision: DecisionRecord
@@ -32,6 +37,7 @@ const ACTION_CONFIG: Record<string, { color: string; bg: string; icon: string; l
   close_short: { color: '#F0B90B', bg: 'rgba(240, 185, 11, 0.15)', icon: '💰', label: 'CLOSE' },
   hold: { color: '#848E9C', bg: 'rgba(132, 142, 156, 0.15)', icon: '⏸️', label: 'HOLD' },
   wait: { color: '#848E9C', bg: 'rgba(132, 142, 156, 0.15)', icon: '⏳', label: 'WAIT' },
+  unavailable: { color: '#F6465D', bg: 'rgba(246, 70, 93, 0.15)', icon: '⚠️', label: 'UNAVAILABLE' },
 }
 
 // Format price with proper decimals
@@ -70,9 +76,13 @@ function ActionCard({
   onSymbolClick?: (symbol: string) => void
   highlighted?: boolean
 }) {
-  const config = ACTION_CONFIG[action.action] || ACTION_CONFIG.wait
+  const baseConfig = ACTION_CONFIG[action.action] || ACTION_CONFIG.wait
+  const config = isUnavailableAction(action)
+    ? { ...ACTION_CONFIG.unavailable, label: t('decisionCard.candidateUnavailable', language) }
+    : baseConfig
   const isLong = action.action.includes('long')
   const isOpen = action.action.includes('open')
+  const showUnavailable = isUnavailableAction(action)
 
   return (
     <div
@@ -142,7 +152,7 @@ function ActionCard({
       )}
 
       {/* Trading Details Grid */}
-      {isOpen && (
+      {isOpen && !showUnavailable && (
         <div className="grid grid-cols-4 gap-3 mt-3 pt-3" style={{ borderTop: '1px solid #2B3139' }}>
           {/* Entry Price */}
           <div className="text-center">
@@ -245,7 +255,7 @@ function ActionCard({
       )}
 
       {/* Error Message */}
-      {action.error && (
+      {(action.error || showUnavailable) && (
         <div
           className="mt-3 rounded p-2 text-xs"
           style={{
@@ -254,7 +264,7 @@ function ActionCard({
             color: '#F6465D',
           }}
         >
-          ❌ {action.error}
+          ❌ {action.error || t('decisionCard.candidateUnavailableDefault', language)}
         </div>
       )}
     </div>
@@ -272,6 +282,11 @@ export function DecisionCard({
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
   const [showInputPrompt, setShowInputPrompt] = useState(false)
   const [showCoT, setShowCoT] = useState(false)
+
+  const cycleDecisionItems = useMemo(
+    () => buildCycleDecisionItems(decision),
+    [decision]
+  )
 
   const displayCoTTrace = useMemo(() => {
     if (!decision.cot_trace) return ''
@@ -295,6 +310,11 @@ export function DecisionCard({
     }
     return rows
   }, [decision, livePositions])
+
+  const decisionTimes = useMemo(
+    () => formatDecisionTimestamps(decision.timestamp),
+    [decision.timestamp]
+  )
 
   // Copy text to clipboard
   const copyToClipboard = async (text: string, label: string) => {
@@ -342,10 +362,13 @@ export function DecisionCard({
               {t('cycle', language)} #{decision.cycle_number}
             </div>
             <div className="text-xs" style={{ color: '#848E9C' }}>
-              {new Date(decision.timestamp).toLocaleString()}
+              {decisionTimes?.beijing ?? formatBeijingDateTime(decision.timestamp) ?? '-'}
             </div>
             <div className="text-[10px] mt-0.5" style={{ color: '#5E6673' }}>
               {t('decisionCard.snapshotHint', language)}
+            </div>
+            <div className="text-[10px]" style={{ color: '#5E6673' }}>
+              {t('decisionCard.timezoneHint', language)}
             </div>
           </div>
         </div>
@@ -402,11 +425,11 @@ export function DecisionCard({
       ) : null}
 
       {/* Decision Actions - Beautiful Grid */}
-      {decision.decisions && decision.decisions.length > 0 && (
+      {cycleDecisionItems.length > 0 && (
         <div className="space-y-3 mb-4">
-          {decision.decisions.map((action, index) => (
+          {cycleDecisionItems.map((action, index) => (
             <ActionCard
-              key={`${action.symbol}-${index}`}
+              key={`${action.symbol}-${action.action}-${index}`}
               action={action}
               language={language}
               onSymbolClick={onSymbolClick}

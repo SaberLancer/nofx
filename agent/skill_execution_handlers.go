@@ -911,7 +911,11 @@ func applyStrategyConfigPatch(cfg *store.StrategyConfig, field, value string) er
 	case "description", "is_public", "config_visible":
 		return nil
 	case "max_positions":
-		return fmt.Errorf("%s", strategyLockedFieldError("zh", field))
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("最大持仓数需要是整数")
+		}
+		cfg.RiskControl.MaxPositions = parsed
 	case "source_type":
 		cfg.CoinSource.SourceType = value
 	case "static_coins":

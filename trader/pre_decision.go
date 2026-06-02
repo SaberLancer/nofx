@@ -70,29 +70,46 @@ func (at *AutoTrader) preDecisionWatchSymbols(ctx *kernel.Context) []string {
 	return symbols
 }
 
-func (at *AutoTrader) shouldGateAIByPreDecision(ctx *kernel.Context) (bool, string) {
+// PreDecisionOutcome controls AI invocation after the tick pre-decision gate.
+type PreDecisionOutcome int
+
+const (
+	PreDecisionFullAI          PreDecisionOutcome = iota // tick signal → full candidate analysis
+	PreDecisionPositionsOnlyAI                           // gate failed, open positions → AI on positions only
+	PreDecisionSkipAI                                    // gate failed, flat → skip AI
+)
+
+// evaluatePreDecision runs the tick gate. With open positions, pre-decision is always evaluated
+// (no bypass). When the gate fails and AlwaysWhenPositions is enabled, AI still runs on position symbols only.
+func (at *AutoTrader) evaluatePreDecision(ctx *kernel.Context) (PreDecisionOutcome, string) {
 	if !at.preDecisionEnabled() {
-		return false, ""
-	}
-	cfg := at.preDecisionConfig()
-	if cfg.AlwaysWhenPositions && ctx.Account.PositionCount > 0 {
-		return false, ""
+		return PreDecisionFullAI, ""
 	}
 	if at.preDecisionTracker == nil {
-		return false, ""
+		return PreDecisionFullAI, ""
 	}
 
+	cfg := at.preDecisionConfig()
 	symbols := make([]string, 0, len(ctx.CandidateCoins))
 	for _, coin := range ctx.CandidateCoins {
 		symbols = append(symbols, coin.Symbol)
 	}
 	signal, ok := at.preDecisionTracker.AnyDirectionalSignal(symbols)
 	if ok {
-		return false, fmt.Sprintf("pre-decision signal: %s %s buy=%.1f%% sell=%.1f%% momentum=%+.3f%% ticks=%d",
+		return PreDecisionFullAI, fmt.Sprintf("pre-decision signal: %s %s buy=%.1f%% sell=%.1f%% momentum=%+.3f%% ticks=%d",
 			signal.Symbol, signal.Direction, signal.BuyPressure*100, signal.SellPressure*100, signal.MomentumPct, signal.TickCount)
 	}
+
+	waitReason := ""
 	if len(symbols) == 0 {
-		return true, "pre-decision: no candidate symbols"
+		waitReason = "pre-decision: no candidate symbols"
+	} else {
+		waitReason = fmt.Sprintf("pre-decision: waiting tick trend (%s)", strings.Join(symbols, ", "))
 	}
-	return true, fmt.Sprintf("pre-decision: waiting tick trend (%s)", strings.Join(symbols, ", "))
+
+	hasPositions := len(ctx.Positions) > 0 || ctx.Account.PositionCount > 0
+	if hasPositions && cfg.AlwaysWhenPositions {
+		return PreDecisionPositionsOnlyAI, waitReason
+	}
+	return PreDecisionSkipAI, waitReason
 }

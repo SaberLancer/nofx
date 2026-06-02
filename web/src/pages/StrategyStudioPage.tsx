@@ -50,6 +50,7 @@ import {
   defaultGridConfig,
 } from '../components/strategy/GridConfigEditor'
 import { TokenEstimateBar } from '../components/strategy/TokenEstimateBar'
+import { getEffectiveCoinCount } from '../utils/strategyCoinCount'
 import { DeepVoidBackground } from '../components/common/DeepVoidBackground'
 import { t } from '../i18n/translations'
 
@@ -777,6 +778,7 @@ export function StrategyStudioPage() {
           onChange={(riskControl) => updateAIConfig('risk_control', riskControl)}
           disabled={selectedStrategy?.is_default}
           language={language}
+          candidateCoinCount={getEffectiveCoinCount(currentAIConfig.coin_source)}
         />
       ),
     },

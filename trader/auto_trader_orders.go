@@ -317,6 +317,8 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 
 	if closedQty >= quantity*0.999 || quantity <= 0 {
 		at.clearUnprotected(decision.Symbol, "long")
+		at.clearPnLEnforceTier(decision.Symbol, "long")
+		at.ClearPeakPnLCache(decision.Symbol, "long")
 	}
 	logger.Infof("  ✓ Position closed successfully")
 	return nil
@@ -389,6 +391,8 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 
 	if closedQty >= quantity*0.999 || quantity <= 0 {
 		at.clearUnprotected(decision.Symbol, "short")
+		at.clearPnLEnforceTier(decision.Symbol, "short")
+		at.ClearPeakPnLCache(decision.Symbol, "short")
 	}
 	logger.Infof("  ✓ Position closed successfully")
 	return nil

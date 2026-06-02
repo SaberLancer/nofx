@@ -59,6 +59,9 @@ func (at *AutoTrader) runCycle() error {
 	// Retry attaching SL/TP for positions flagged as unprotected
 	at.retryUnprotectedPositions()
 
+	// Reload strategy from DB when edited (hot update for running traders)
+	at.reloadStrategyConfigIfNeeded()
+
 	// 4. Collect trading context
 	ctx, err := at.buildTradingContext()
 	if err != nil {
@@ -72,6 +75,20 @@ func (at *AutoTrader) runCycle() error {
 	// Save equity snapshot independently (decoupled from AI decision, used for drawing profit curve)
 	// NOTE: Must be called BEFORE candidate coins check to ensure equity is always recorded
 	at.saveEquitySnapshot(ctx)
+
+	// Code-enforced lock-profit / stop-loss / peak pullback (does not wait for AI)
+	if n := at.enforcePositionPnLRules(ctx, record); n > 0 {
+		if refreshed, refreshErr := at.refreshTradingContextAfterPnLEnforce(n, record); refreshErr != nil {
+			at.logWarnf("⚠️ Failed to refresh context after PnL enforce: %v (AI will use pre-enforce snapshot)", refreshErr)
+			if record != nil {
+				record.ExecutionLog = append(record.ExecutionLog,
+					fmt.Sprintf("Context refresh after PnL enforce failed: %v", refreshErr))
+			}
+		} else {
+			ctx = refreshed
+			at.saveEquitySnapshot(ctx)
+		}
+	}
 
 	// If no candidate coins available, log but do not error
 	if len(ctx.CandidateCoins) == 0 {
@@ -97,8 +114,9 @@ func (at *AutoTrader) runCycle() error {
 	at.logInfof("📊 Account equity: %.2f USDT | Available: %.2f USDT | Positions: %d",
 		ctx.Account.TotalEquity, ctx.Account.AvailableBalance, ctx.Account.PositionCount)
 
-	// 4.5 Pre-decision gate: skip AI when no directional tick trend is detected
-	if gate, reason := at.shouldGateAIByPreDecision(ctx); gate {
+	// 4.5 Pre-decision gate
+	switch outcome, reason := at.evaluatePreDecision(ctx); outcome {
+	case PreDecisionSkipAI:
 		at.logInfof("⏭ %s", reason)
 		record.Success = true
 		record.PreDecisionSkipped = true
@@ -112,9 +130,26 @@ func (at *AutoTrader) runCycle() error {
 		}
 		at.saveDecision(record)
 		return nil
-	} else if reason != "" {
-		at.logInfof("✅ %s", reason)
+	case PreDecisionPositionsOnlyAI:
+		at.logInfof("⏭ %s", reason)
 		record.ExecutionLog = append(record.ExecutionLog, reason)
+		kernel.RestrictCandidatesToPositions(ctx)
+		posSymbols := make([]string, 0, len(ctx.Positions))
+		for _, pos := range ctx.Positions {
+			posSymbols = append(posSymbols, pos.Symbol)
+		}
+		scopeLine := fmt.Sprintf("pre-decision: AI limited to position symbols (%s)", strings.Join(posSymbols, ", "))
+		at.logInfof("📌 %s", scopeLine)
+		record.ExecutionLog = append(record.ExecutionLog, scopeLine)
+		record.CandidateCoins = nil
+		for _, coin := range ctx.CandidateCoins {
+			record.CandidateCoins = append(record.CandidateCoins, coin.Symbol)
+		}
+	case PreDecisionFullAI:
+		if reason != "" {
+			at.logInfof("✅ %s", reason)
+			record.ExecutionLog = append(record.ExecutionLog, reason)
+		}
 	}
 
 	// 5. Use strategy engine to call AI for decision
@@ -126,6 +161,10 @@ func (at *AutoTrader) runCycle() error {
 		at.logInfof("⏱️ AI call duration: %.2f seconds", float64(record.AIRequestDurationMs)/1000)
 		record.ExecutionLog = append(record.ExecutionLog,
 			fmt.Sprintf("AI call duration: %d ms", record.AIRequestDurationMs))
+		if line := formatPromptCacheExecutionLog(aiDecision); line != "" {
+			at.logInfof("📦 %s", line)
+			record.ExecutionLog = append(record.ExecutionLog, line)
+		}
 	}
 
 	// Save chain of thought, decisions, and input prompt even if there's an error (for debugging)
@@ -178,6 +217,12 @@ func (at *AutoTrader) runCycle() error {
 			}
 		}
 
+		candidateSymbols := make([]string, 0, len(ctx.CandidateCoins))
+		for _, coin := range ctx.CandidateCoins {
+			candidateSymbols = append(candidateSymbols, coin.Symbol)
+		}
+		store.AppendMissingCandidateDecisions(record, candidateSymbols, ctx.MarketDataFailures)
+
 		at.saveDecision(record)
 
 		// In safe mode, don't return error — keep the loop running to retry next cycle
@@ -187,6 +232,13 @@ func (at *AutoTrader) runCycle() error {
 		}
 
 		return fmt.Errorf("failed to get AI decision: %w", err)
+	}
+
+	if aiDecision != nil && len(aiDecision.ValidationNotes) > 0 {
+		for _, note := range aiDecision.ValidationNotes {
+			at.logWarnf("⚠️ %s", note)
+			record.ExecutionLog = append(record.ExecutionLog, "⚠️ "+note)
+		}
 	}
 
 	// AI succeeded — reset failure counter and deactivate safe mode
@@ -301,6 +353,12 @@ func (at *AutoTrader) runCycle() error {
 		record.Decisions = append(record.Decisions, actionRecord)
 	}
 
+	candidateSymbols := make([]string, 0, len(ctx.CandidateCoins))
+	for _, coin := range ctx.CandidateCoins {
+		candidateSymbols = append(candidateSymbols, coin.Symbol)
+	}
+	store.AppendMissingCandidateDecisions(record, candidateSymbols, ctx.MarketDataFailures)
+
 	// 9. Save decision record
 	if err := at.saveDecision(record); err != nil {
 		at.logWarnf("⚠ Failed to save decision record: %v", err)
@@ -384,6 +442,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 
 		// Get position open time from exchange (preferred) or fallback to local tracking
 		posKey := symbol + "_" + side
+		at.UpdatePeakPnL(symbol, side, pnlPct)
 		currentPositionKeys[posKey] = true
 
 		var updateTime int64
@@ -415,18 +474,19 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		at.peakPnLCacheMutex.RUnlock()
 
 		positionInfos = append(positionInfos, kernel.PositionInfo{
-			Symbol:           symbol,
-			Side:             side,
-			EntryPrice:       entryPrice,
-			MarkPrice:        markPrice,
-			Quantity:         quantity,
-			Leverage:         leverage,
-			UnrealizedPnL:    unrealizedPnl,
-			UnrealizedPnLPct: pnlPct,
-			PeakPnLPct:       peakPnlPct,
-			LiquidationPrice: liquidationPrice,
-			MarginUsed:       marginUsed,
-			UpdateTime:       updateTime,
+			Symbol:             symbol,
+			Side:               side,
+			EntryPrice:         entryPrice,
+			MarkPrice:          markPrice,
+			Quantity:           quantity,
+			Leverage:           leverage,
+			UnrealizedPnL:      unrealizedPnl,
+			UnrealizedPnLPct:   pnlPct,
+			PeakPnLPct:         peakPnlPct,
+			LiquidationPrice:   liquidationPrice,
+			MarginUsed:         marginUsed,
+			UpdateTime:         updateTime,
+			AutoPnLEnforceTier: at.getPnLEnforceTier(posKey),
 		})
 	}
 
@@ -472,7 +532,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 
 	// 6. Build context
 	ctx := &kernel.Context{
-		CurrentTime:     time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
+		CurrentTime:     kernel.FormatBeijingDateTime(time.Now()),
 		RuntimeMinutes:  int(time.Since(at.startTime).Minutes()),
 		CallCount:       at.callCount,
 		BTCETHLeverage:  btcEthLeverage,
@@ -489,6 +549,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		},
 		Positions:      positionInfos,
 		CandidateCoins: candidateCoins,
+		KlineExchange:  at.exchange,
 	}
 
 	// 7. Add recent closed trades (if store is available)
@@ -503,11 +564,11 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 				// Convert Unix timestamps to formatted strings for AI readability
 				entryTimeStr := ""
 				if trade.EntryTime > 0 {
-					entryTimeStr = time.Unix(trade.EntryTime, 0).UTC().Format("01-02 15:04 UTC")
+					entryTimeStr = kernel.FormatBeijingKlineTimeMs(trade.EntryTime * 1000)
 				}
 				exitTimeStr := ""
 				if trade.ExitTime > 0 {
-					exitTimeStr = time.Unix(trade.ExitTime, 0).UTC().Format("01-02 15:04 UTC")
+					exitTimeStr = kernel.FormatBeijingKlineTimeMs(trade.ExitTime * 1000)
 				}
 
 				ctx.RecentOrders = append(ctx.RecentOrders, kernel.RecentOrder{
@@ -671,4 +732,17 @@ func (at *AutoTrader) checkClaw402Balance() {
 		logger.Infof("💰 [%s] USDC Balance: $%.2f | Daily AI cost: ~$%.2f | Runway: ~%.1f days",
 			at.name, balance, dailyCost, runway)
 	}
+}
+
+func formatPromptCacheExecutionLog(aiDecision *kernel.FullDecision) string {
+	if aiDecision == nil {
+		return ""
+	}
+	hit := aiDecision.PromptCacheHitTokens
+	miss := aiDecision.PromptCacheMissTokens
+	input := hit + miss
+	if input == 0 {
+		input = aiDecision.PromptTokens
+	}
+	return fmt.Sprintf("Prompt cache: hit=%d miss=%d (of input %d)", hit, miss, input)
 }

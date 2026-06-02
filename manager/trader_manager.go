@@ -616,11 +616,13 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 
 	// Load strategy config (must have strategy)
 	var strategyConfig *store.StrategyConfig
+	var strategyRecord *store.Strategy
 	if traderCfg.StrategyID != "" {
 		strategy, err := st.Strategy().Get(traderCfg.UserID, traderCfg.StrategyID)
 		if err != nil {
 			return fmt.Errorf("failed to load strategy %s for trader %s: %w", traderCfg.StrategyID, traderCfg.Name, err)
 		}
+		strategyRecord = strategy
 		// Parse JSON config
 		strategyConfig, err = strategy.ParseConfig()
 		if err != nil {
@@ -652,6 +654,9 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		IsCrossMargin:         traderCfg.IsCrossMargin,
 		ShowInCompetition:     traderCfg.ShowInCompetition,
 		StrategyConfig:        strategyConfig,
+		StrategyID:            traderCfg.StrategyID,
+		StrategyName:          strategyRecord.Name,
+		StrategyUpdatedAt:     strategyRecord.UpdatedAt,
 	}
 
 	logger.Infof("📊 Loading trader %s: ScanIntervalMinutes=%d (from DB), ScanInterval=%v",

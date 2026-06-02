@@ -103,7 +103,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 
 	// 2. Build System Prompt using strategy engine
 	riskConfig := engine.GetRiskControlConfig()
-	systemPrompt := engine.BuildSystemPrompt(ctx.Account.TotalEquity, variant)
+	systemPrompt := engine.BuildSystemPrompt(variant)
 
 	// 3. Build User Prompt using strategy engine
 	userPrompt := engine.BuildUserPrompt(ctx)
@@ -140,6 +140,10 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 		decision.SystemPrompt = systemPrompt
 		decision.UserPrompt = userPrompt
 		decision.AIRequestDurationMs = aiCallDuration.Milliseconds()
+		usage := mcp.TokenUsageFromClient(mcpClient)
+		decision.PromptTokens = usage.PromptTokens
+		decision.PromptCacheHitTokens = usage.PromptCacheHitTokens
+		decision.PromptCacheMissTokens = usage.PromptCacheMissTokens
 		decision.RawResponse = aiResponse
 		if decision.CoTTrace != "" && len(ctx.Positions) > 0 {
 			decision.CoTTrace = FixReasoningPositionPnLPct(decision.CoTTrace, ctx.Positions)
@@ -161,6 +165,13 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 	config := engine.GetConfig()
 	ctx.MarketDataMap = make(map[string]*market.Data)
+	if ctx.MarketDataFailures == nil {
+		ctx.MarketDataFailures = make(map[string]string)
+	} else {
+		for k := range ctx.MarketDataFailures {
+			delete(ctx.MarketDataFailures, k)
+		}
+	}
 
 	timeframes := config.Indicators.Klines.SelectedTimeframes
 	primaryTimeframe := config.Indicators.Klines.PrimaryTimeframe
@@ -186,9 +197,14 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	logger.Infof("📊 Strategy timeframes: %v, Primary: %s, Kline count: %d", timeframes, primaryTimeframe, klineCount)
 
+	klineExchange := market.NormalizeKlineExchange(ctx.KlineExchange)
+	if klineExchange == "okx" {
+		logger.Infof("📊 Kline source: OKX direct → CoinAnk → Binance fallback")
+	}
+
 	// 1. First fetch data for position coins (must fetch)
 	for _, pos := range ctx.Positions {
-		data, err := market.GetWithTimeframes(pos.Symbol, timeframes, primaryTimeframe, klineCount)
+		data, err := market.GetWithTimeframes(pos.Symbol, timeframes, primaryTimeframe, klineCount, klineExchange)
 		if err != nil {
 			logger.Infof("⚠️  Failed to fetch market data for position %s: %v", pos.Symbol, err)
 			continue
@@ -204,13 +220,20 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	const minOIThresholdMillions = 15.0 // 15M USD minimum open interest value
 
+	fetchedCandidateCount := 0
 	for _, coin := range ctx.CandidateCoins {
 		if _, exists := ctx.MarketDataMap[coin.Symbol]; exists {
 			continue
 		}
+		if fetchedCandidateCount > 0 {
+			time.Sleep(market.CoinAnkRequestSpacing)
+		}
+		fetchedCandidateCount++
 
-		data, err := market.GetWithTimeframes(coin.Symbol, timeframes, primaryTimeframe, klineCount)
+		data, err := market.GetWithTimeframes(coin.Symbol, timeframes, primaryTimeframe, klineCount, klineExchange)
 		if err != nil {
+			reason := err.Error()
+			ctx.MarketDataFailures[coin.Symbol] = reason
 			logger.Infof("⚠️  Failed to fetch market data for %s: %v", coin.Symbol, err)
 			continue
 		}
@@ -222,6 +245,8 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 			oiValue := data.OpenInterest.Latest * data.CurrentPrice
 			oiValueInMillions := oiValue / 1_000_000
 			if oiValueInMillions < minOIThresholdMillions {
+				reason := fmt.Sprintf("open interest too low (%.2fM USD < %.1fM)", oiValueInMillions, minOIThresholdMillions)
+				ctx.MarketDataFailures[coin.Symbol] = reason
 				logger.Infof("⚠️  %s OI value too low (%.2fM USD < %.1fM), skipping coin",
 					coin.Symbol, oiValueInMillions, minOIThresholdMillions)
 				continue
@@ -250,16 +275,12 @@ func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthL
 		}, fmt.Errorf("failed to extract decisions: %w", err)
 	}
 
-	if err := validateDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, protection, marketPrices); err != nil {
-		return &FullDecision{
-			CoTTrace:  cotTrace,
-			Decisions: decisions,
-		}, fmt.Errorf("decision validation failed: %w", err)
-	}
+	validationNotes := sanitizeDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, protection, marketPrices)
 
 	return &FullDecision{
-		CoTTrace:  cotTrace,
-		Decisions: decisions,
+		CoTTrace:        cotTrace,
+		Decisions:       decisions,
+		ValidationNotes: validationNotes,
 	}, nil
 }
 

@@ -18,6 +18,7 @@ func AppendConfiguredPnLThresholds(sb *strings.Builder, rc store.RiskControlConf
 
 	if lang == LangChinese {
 		sb.WriteString("## 持仓盈利率风控（Margin PnL%，相对保证金、已含杠杆）\n\n")
+		sb.WriteString("**系统会在每轮周期与每分钟监控中自动执行**锁盈/止损/峰值回撤（CODE ENFORCED），不依赖 AI 是否及时减仓；AI 仍可做额外判断。\n\n")
 		sb.WriteString("减仓/平仓判断**必须**使用「当前持仓」的 **Margin PnL%**，不得用标的涨跌幅。\n\n")
 		sb.WriteString(fmt.Sprintf("- **锁盈（第一档）**：Margin PnL%% ≥ %+.1f%% → 开始锁盈，建议 `close_ratio=%.2f` 部分减仓或上移止损\n", lock1, ratio))
 		sb.WriteString(fmt.Sprintf("- **锁盈（第二档）**：Margin PnL%% ≥ %+.1f%% → 再减仓 30%%~50%%，收紧止损保护剩余仓位\n", lock2))
@@ -26,6 +27,7 @@ func AppendConfiguredPnLThresholds(sb *strings.Builder, rc store.RiskControlConf
 		sb.WriteString(fmt.Sprintf("- **峰值回撤**：Peak PnL%% ≥ %+.1f%% 且从峰值回撤 ≥ %.1f 个百分点 → 减仓/平仓\n\n", peakMin, pullPts))
 	} else {
 		sb.WriteString("## Position PnL% Risk Rules (Margin PnL%, leverage included)\n\n")
+		sb.WriteString("**The system auto-enforces** lock-profit / stop-loss / peak pullback each cycle and every minute (CODE ENFORCED), independent of AI timing.\n\n")
 		sb.WriteString("Use **Margin PnL%** from Current Positions for reduce/exit — not raw price change.\n\n")
 		sb.WriteString(fmt.Sprintf("- **Lock profit (tier 1)**: Margin PnL%% ≥ %+.1f%% → start lock; suggest `close_ratio=%.2f`\n", lock1, ratio))
 		sb.WriteString(fmt.Sprintf("- **Lock profit (tier 2)**: Margin PnL%% ≥ %+.1f%% → reduce 30%%~50%% more, tighten stop\n", lock2))
@@ -71,8 +73,20 @@ func AppendPositionPnLActionGuide(sb *strings.Builder, positions []PositionInfo,
 		if pnl >= exitP {
 			actions = append(actions, fmt.Sprintf("PROFIT PROTECT: PnL%% %+.2f%% ≥ %+.1f%% → on reversal signals, close (do not wait)", pnl, exitP))
 		}
-		if pnl >= lock2 {
+		if pos.AutoPnLEnforceTier >= 2 {
+			if lang == LangChinese {
+				actions = append(actions, "锁盈二档已由系统自动执行 — 勿重复同档减仓，可收紧止损或等待更高档位")
+			} else {
+				actions = append(actions, "LOCK TIER 2 already applied by system — do not repeat same-tier reduce; tighten SL or wait")
+			}
+		} else if pnl >= lock2 {
 			actions = append(actions, fmt.Sprintf("LOCK TIER 2: PnL%% %+.2f%% ≥ %+.1f%% → reduce 30%%~50%% (close_ratio 0.3~0.5), tighten SL", pnl, lock2))
+		} else if pos.AutoPnLEnforceTier >= 1 {
+			if lang == LangChinese {
+				actions = append(actions, "锁盈一档已由系统自动执行 — 勿重复同档减仓，可收紧止损或等待二档")
+			} else {
+				actions = append(actions, "LOCK TIER 1 already applied by system — do not repeat same-tier reduce; tighten SL or wait for tier 2")
+			}
 		} else if pnl >= lock1 {
 			actions = append(actions, fmt.Sprintf("LOCK TIER 1: PnL%% %+.2f%% ≥ %+.1f%% → start lock profit (close_ratio=%.2f) or move SL to breakeven", pnl, lock1, ratio))
 		} else {

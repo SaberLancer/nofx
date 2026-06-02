@@ -204,95 +204,46 @@ func (s *AIModelStore) Update(userID, id string, enabled bool, apiKey, customAPI
 }
 
 func (s *AIModelStore) UpdateWithName(userID, id, name string, enabled bool, apiKey, customAPIURL, customModelName string) error {
-	// Try exact ID match first
+	id = strings.TrimSpace(id)
 	var existingModel AIModel
 	err := s.db.Where("user_id = ? AND id = ?", userID, id).First(&existingModel).Error
 	if err == nil {
-		// Update existing model
-		updates := map[string]interface{}{
-			"enabled":           enabled,
-			"custom_api_url":    customAPIURL,
-			"custom_model_name": customModelName,
-			"updated_at":        time.Now().UTC(),
-		}
-		if strings.TrimSpace(name) != "" {
-			updates["name"] = strings.TrimSpace(name)
-		}
-		// If apiKey is not empty, update it (encryption handled by crypto.EncryptedString)
-		if apiKey != "" {
-			updates["api_key"] = crypto.EncryptedString(apiKey)
-		}
-		return s.db.Model(&existingModel).Updates(updates).Error
+		return s.applyModelUpdates(&existingModel, name, enabled, apiKey, customAPIURL, customModelName)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
 	}
 
-	// Try legacy logic compatibility: use id as provider to search
-	provider := id
-	err = s.db.Where("user_id = ? AND provider = ?", userID, provider).First(&existingModel).Error
-	if err == nil {
-		logger.Warnf("⚠️ Using legacy provider matching to update model: %s -> %s", provider, existingModel.ID)
-		updates := map[string]interface{}{
-			"enabled":           enabled,
-			"custom_api_url":    customAPIURL,
-			"custom_model_name": customModelName,
-			"updated_at":        time.Now().UTC(),
+	// Legacy: request key is a provider slug (e.g. PUT models.deepseek) — only if unambiguous.
+	provider := strings.ToLower(strings.TrimSpace(id))
+	if isKnownProviderSlug(provider) {
+		var matches []AIModel
+		if e := s.db.Where("user_id = ? AND provider = ?", userID, provider).Find(&matches).Error; e != nil {
+			return e
 		}
-		if strings.TrimSpace(name) != "" {
-			updates["name"] = strings.TrimSpace(name)
-		}
-		if apiKey != "" {
-			updates["api_key"] = crypto.EncryptedString(apiKey)
-		}
-		return s.db.Model(&existingModel).Updates(updates).Error
-	}
-
-	// Create new record
-	if provider == id && (provider == "deepseek" || provider == "qwen") {
-		provider = id
-	} else {
-		parts := strings.Split(id, "_")
-		if len(parts) >= 2 {
-			provider = parts[len(parts)-1]
-		} else {
-			provider = id
+		switch len(matches) {
+		case 1:
+			logger.Warnf("⚠️ Legacy provider key %q resolved to model id=%s", provider, matches[0].ID)
+			return s.applyModelUpdates(&matches[0], name, enabled, apiKey, customAPIURL, customModelName)
+		case 0:
+			_, err := s.CreateDedicated(userID, provider, name, apiKey, customAPIURL, customModelName, enabled)
+			return err
+		default:
+			return fmt.Errorf("multiple AI models exist for provider %q; use explicit model id (e.g. %s)", provider, matches[0].ID)
 		}
 	}
 
-	// Try to get a sensible default name from an existing model with the same provider.
-	var refModel AIModel
-	defaultName := ""
-	if err := s.db.Where("provider = ?", provider).First(&refModel).Error; err == nil {
-		defaultName = refModel.Name
-	} else {
-		if provider == "deepseek" {
-			defaultName = "DeepSeek AI"
-		} else if provider == "qwen" {
-			defaultName = "Qwen AI"
-		} else {
-			defaultName = provider + " AI"
-		}
+	// Infer provider from composite id and create (legacy single-model id patterns).
+	inferred := provider
+	parts := strings.Split(id, "_")
+	if len(parts) >= 2 {
+		inferred = strings.ToLower(parts[len(parts)-1])
 	}
-	finalName := strings.TrimSpace(name)
-	if finalName == "" {
-		finalName = strings.TrimSpace(defaultName)
+	if !isKnownProviderSlug(inferred) {
+		return fmt.Errorf("ai model not found: id=%s", id)
 	}
-
-	newModelID := id
-	if id == provider {
-		newModelID = fmt.Sprintf("%s_%s", userID, provider)
-	}
-
-	logger.Infof("✓ Creating new AI model configuration: ID=%s, Provider=%s, Name=%s", newModelID, provider, finalName)
-	newModel := &AIModel{
-		ID:              newModelID,
-		UserID:          userID,
-		Name:            finalName,
-		Provider:        provider,
-		Enabled:         enabled,
-		APIKey:          crypto.EncryptedString(apiKey),
-		CustomAPIURL:    customAPIURL,
-		CustomModelName: customModelName,
-	}
-	return s.db.Create(newModel).Error
+	_, err = s.CreateDedicated(userID, inferred, name, apiKey, customAPIURL, customModelName, enabled)
+	return err
 }
 
 // Create creates an AI model

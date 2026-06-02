@@ -303,7 +303,7 @@ func (at *AutoTrader) InitializeGrid() error {
 	// Calculate grid bounds
 	if gridConfig.UseATRBounds {
 		// Get ATR for bound calculation
-		mktData, err := market.GetWithTimeframes(gridConfig.Symbol, []string{"4h"}, "4h", 20)
+		mktData, err := market.GetWithTimeframes(gridConfig.Symbol, []string{"4h"}, "4h", 20, at.exchange)
 		if err != nil {
 			logger.Warnf("Failed to get market data for ATR: %v, using default bounds", err)
 			at.calculateDefaultBounds(price, gridConfig)
@@ -359,6 +359,8 @@ func (at *AutoTrader) RunGridCycle() error {
 		logger.Infof("[Grid] Trader is stopped, aborting grid cycle")
 		return nil
 	}
+
+	at.reloadStrategyConfigIfNeeded()
 
 	if at.gridState == nil || !at.gridState.IsInitialized {
 		if err := at.InitializeGrid(); err != nil {
@@ -466,7 +468,7 @@ func (at *AutoTrader) buildGridContext() (*kernel.GridContext, error) {
 	gridConfig := at.config.StrategyConfig.GridConfig
 
 	// Get market data
-	mktData, err := market.GetWithTimeframes(gridConfig.Symbol, []string{"5m", "4h"}, "5m", 50)
+	mktData, err := market.GetWithTimeframes(gridConfig.Symbol, []string{"5m", "4h"}, "5m", 50, at.exchange)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get market data: %w", err)
 	}

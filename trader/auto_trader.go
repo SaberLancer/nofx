@@ -140,6 +140,11 @@ type AutoTraderConfig struct {
 
 	// Strategy configuration (use complete strategy config)
 	StrategyConfig *store.StrategyConfig // Strategy configuration (includes coin sources, indicators, risk control, prompts, etc.)
+
+	// Strategy hot-reload metadata (loaded from DB at trader init)
+	StrategyID        string
+	StrategyName      string
+	StrategyUpdatedAt time.Time
 }
 
 // AutoTrader automatic trader
@@ -155,6 +160,10 @@ type AutoTrader struct {
 	mcpClient             mcp.AIClient
 	store                 *store.Store           // Data storage (decision records, etc.)
 	strategyEngine        *kernel.StrategyEngine // Strategy engine (uses strategy configuration)
+	strategyID            string                 // Bound strategy ID (may change via trader update)
+	strategyName          string                 // Strategy display name (for logs)
+	strategyUpdatedAt     time.Time              // Last loaded strategy UpdatedAt from DB
+	strategyMu            sync.RWMutex           // Protects strategyEngine + StrategyConfig hot-reload
 	cycleNumber           int                    // Current cycle number
 	initialBalance        float64
 	dailyPnL              float64
@@ -171,6 +180,8 @@ type AutoTrader struct {
 	monitorWg             sync.WaitGroup     // Used to wait for monitoring goroutine to finish
 	peakPnLCache          map[string]float64 // Peak profit cache (symbol -> peak P&L percentage)
 	peakPnLCacheMutex     sync.RWMutex       // Cache read-write lock
+	pnlEnforceTier        map[string]int     // Highest auto lock-profit tier applied (symbol_side -> tier)
+	pnlEnforceTierMu      sync.RWMutex
 	lastBalanceSyncTime   time.Time          // Last balance sync time
 	userID                string             // User ID
 	gridState             *GridState         // Grid trading state (only used when StrategyType == "grid_trading")
@@ -384,6 +395,9 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		mcpClient:             mcpClient,
 		store:                 st,
 		strategyEngine:        strategyEngine,
+		strategyID:            config.StrategyID,
+		strategyName:          config.StrategyName,
+		strategyUpdatedAt:     config.StrategyUpdatedAt,
 		cycleNumber:           cycleNumber,
 		initialBalance:        config.InitialBalance,
 		lastResetTime:         time.Now(),
@@ -394,6 +408,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		stopMonitorCh:         make(chan struct{}),
 		monitorWg:             sync.WaitGroup{},
 		peakPnLCache:          make(map[string]float64),
+		pnlEnforceTier:        make(map[string]int),
 		peakPnLCacheMutex:     sync.RWMutex{},
 		lastBalanceSyncTime:   time.Now(),
 		userID:                userID,
@@ -591,6 +606,11 @@ func (at *AutoTrader) GetExchange() string {
 	return at.exchange
 }
 
+// GetExchangeID returns the exchange account UUID used for order/position sync.
+func (at *AutoTrader) GetExchangeID() string {
+	return at.exchangeID
+}
+
 // GetShowInCompetition returns whether trader should be shown in competition
 func (at *AutoTrader) GetShowInCompetition() bool {
 	return at.showInCompetition
@@ -632,6 +652,8 @@ func (at *AutoTrader) GetCandidateCoins() ([]kernel.CandidateCoin, error) {
 
 // GetStrategyConfig returns the current strategy config used by the trader.
 func (at *AutoTrader) GetStrategyConfig() *store.StrategyConfig {
+	at.strategyMu.RLock()
+	defer at.strategyMu.RUnlock()
 	if at.strategyEngine == nil {
 		return at.config.StrategyConfig
 	}

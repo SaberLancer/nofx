@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"nofx/logger"
+	"nofx/provider/coinank"
 	"nofx/provider/coinank/coinank_api"
 	"nofx/provider/coinank/coinank_enum"
 	"nofx/provider/hyperliquid"
@@ -14,8 +15,26 @@ import (
 
 // Note: Kline data now uses free/open API (coinank_api.Kline) which doesn't require authentication
 
+const (
+	coinAnkKlineMaxAttempts = 3
+	coinAnkKlineRetryDelay  = 200 * time.Millisecond
+	// CoinAnkRequestSpacing is a short pause between consecutive timeframe requests for one symbol.
+	CoinAnkRequestSpacing = 120 * time.Millisecond
+)
+
 // getKlinesFromCoinAnk fetches kline data from CoinAnk API (replacement for WSMonitorCli)
 func getKlinesFromCoinAnk(symbol, interval, exchange string, limit int) ([]Kline, error) {
+	exchange = NormalizeKlineExchange(exchange)
+
+	if exchange == "okx" && !IsXyzDexAsset(symbol) {
+		if klines, err := GetKlinesRecentOKX(symbol, interval, limit); err == nil && len(klines) > 0 {
+			logger.Infof("✓ OKX direct klines succeeded for %s %s (%d bars)", symbol, interval, len(klines))
+			return klines, nil
+		} else if err != nil {
+			logger.Warnf("⚠️ OKX direct klines failed for %s %s: %v", symbol, interval, err)
+		}
+	}
+
 	// Map interval string to coinank enum
 	var coinankInterval coinank_enum.Interval
 	switch interval {
@@ -73,29 +92,42 @@ func getKlinesFromCoinAnk(symbol, interval, exchange string, limit int) ([]Kline
 		coinankExchange = coinank_enum.Binance
 	}
 
-	// Call CoinAnk free/open API (no authentication required)
-	ctx := context.Background()
-	ts := time.Now().UnixMilli()
-	// Use "To" side to search backward from current time (get historical klines)
-	coinankKlines, err := coinank_api.Kline(ctx, symbol, coinankExchange, ts, coinank_enum.To, limit, coinankInterval)
-	if err != nil || len(coinankKlines) == 0 {
-		// If exchange-specific data fails or returns empty, fallback to Binance
+	coinankKlines, coinankErr := fetchCoinAnkKlinesWithRetry(coinAnkSymbol(symbol, coinankExchange), coinankExchange, limit, coinankInterval)
+	if coinankErr != nil || len(coinankKlines) == 0 {
+		// If exchange-specific data fails or returns empty, fallback to CoinAnk Binance
 		if coinankExchange != coinank_enum.Binance {
-			if err != nil {
-				logger.Warnf("⚠️ CoinAnk %s data failed, falling back to Binance: %v", exchange, err)
+			if coinankErr != nil {
+				logger.Warnf("⚠️ CoinAnk %s data failed, falling back to CoinAnk Binance: %v", exchange, coinankErr)
 			} else {
-				logger.Warnf("⚠️ CoinAnk %s %s data empty for %s, falling back to Binance", exchange, interval, symbol)
+				logger.Warnf("⚠️ CoinAnk %s %s data empty for %s, falling back to CoinAnk Binance", exchange, interval, symbol)
 			}
-			coinankKlines, err = coinank_api.Kline(ctx, symbol, coinank_enum.Binance, ts, coinank_enum.To, limit, coinankInterval)
-			if err != nil {
-				return nil, fmt.Errorf("CoinAnk API error (fallback): %w", err)
-			}
-		} else if err != nil {
-			return nil, fmt.Errorf("CoinAnk API error: %w", err)
+			coinankKlines, coinankErr = fetchCoinAnkKlinesWithRetry(coinAnkSymbol(symbol, coinank_enum.Binance), coinank_enum.Binance, limit, coinankInterval)
 		}
 	}
 
-	// Convert coinank kline format to market.Kline format
+	if len(coinankKlines) > 0 {
+		return convertCoinAnkKlines(coinankKlines), nil
+	}
+
+	if IsXyzDexAsset(symbol) {
+		if coinankErr != nil {
+			return nil, fmt.Errorf("CoinAnk API error: %w", coinankErr)
+		}
+		return nil, fmt.Errorf("CoinAnk returned empty klines for %s %s", symbol, interval)
+	}
+
+	return getKlinesWithBinanceDirectFallback(symbol, interval, limit, coinankErr)
+}
+
+func coinAnkSymbol(symbol string, exchange coinank_enum.Exchange) string {
+	if exchange == coinank_enum.Okex && strings.HasSuffix(symbol, "USDT") {
+		base := strings.TrimSuffix(symbol, "USDT")
+		return fmt.Sprintf("%s-USDT-SWAP", base)
+	}
+	return symbol
+}
+
+func convertCoinAnkKlines(coinankKlines []coinank.KlineResult) []Kline {
 	klines := make([]Kline, len(coinankKlines))
 	for i, ck := range coinankKlines {
 		klines[i] = Kline{
@@ -108,8 +140,69 @@ func getKlinesFromCoinAnk(symbol, interval, exchange string, limit int) ([]Kline
 			CloseTime: ck.EndTime,
 		}
 	}
+	return klines
+}
 
-	return klines, nil
+func getKlinesWithBinanceDirectFallback(symbol, interval string, limit int, coinankErr error) ([]Kline, error) {
+	if coinankErr != nil {
+		logger.Warnf("⚠️ CoinAnk unavailable for %s %s (%v), trying Binance direct API", symbol, interval, coinankErr)
+	} else {
+		logger.Warnf("⚠️ CoinAnk returned empty klines for %s %s, trying Binance direct API", symbol, interval)
+	}
+
+	klines, binanceErr := GetKlinesRecent(symbol, interval, limit)
+	if binanceErr == nil && len(klines) > 0 {
+		logger.Infof("✓ Binance direct fallback succeeded for %s %s (%d bars)", symbol, interval, len(klines))
+		return klines, nil
+	}
+
+	if coinankErr != nil && binanceErr != nil {
+		return nil, fmt.Errorf("CoinAnk: %v; Binance direct: %w", coinankErr, binanceErr)
+	}
+	if binanceErr != nil {
+		return nil, fmt.Errorf("Binance direct fallback failed: %w", binanceErr)
+	}
+	if coinankErr != nil {
+		return nil, fmt.Errorf("CoinAnk: %w; Binance direct: empty response", coinankErr)
+	}
+	return nil, fmt.Errorf("no klines available for %s %s", symbol, interval)
+}
+
+func fetchCoinAnkKlinesWithRetry(
+	symbol string,
+	exchange coinank_enum.Exchange,
+	limit int,
+	interval coinank_enum.Interval,
+) ([]coinank.KlineResult, error) {
+	ctx := context.Background()
+	ts := time.Now().UnixMilli()
+
+	var lastErr error
+	for attempt := 1; attempt <= coinAnkKlineMaxAttempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(coinAnkKlineRetryDelay * time.Duration(attempt-1))
+		}
+
+		klines, err := coinank_api.Kline(ctx, symbol, exchange, ts, coinank_enum.To, limit, interval)
+		if err == nil && len(klines) > 0 {
+			if attempt > 1 {
+				logger.Infof("✓ CoinAnk %s %s succeeded on attempt %d/%d", symbol, interval, attempt, coinAnkKlineMaxAttempts)
+			}
+			return klines, nil
+		}
+
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("empty kline response")
+		}
+
+		if attempt < coinAnkKlineMaxAttempts {
+			logger.Infof("⚠️ CoinAnk %s %s attempt %d/%d failed: %v", symbol, interval, attempt, coinAnkKlineMaxAttempts, lastErr)
+		}
+	}
+
+	return nil, lastErr
 }
 
 // getKlinesFromHyperliquid fetches kline data from Hyperliquid API for xyz dex assets

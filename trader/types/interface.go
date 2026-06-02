@@ -13,8 +13,11 @@ type ClosedPnLRecord struct {
 	EntryPrice   float64   // Entry price
 	ExitPrice    float64   // Exit/close price
 	Quantity     float64   // Position size
-	RealizedPnL  float64   // Realized profit/loss
-	Fee          float64   // Trading fee/commission
+	RealizedPnL  float64   // Gross trading PnL excluding fees (OKX `pnl`; matches 平仓收益)
+	NetRealizedPnL float64 // Net PnL after fees (OKX `realizedPnl`)
+	PnlRatio     float64   // Exchange-reported ROI ratio (OKX `pnlRatio`, leverage-aware)
+	Fee          float64   // Trading fee/commission (positive magnitude)
+	FundingFee   float64   // Accumulated funding fee (signed: negative = paid)
 	Leverage     int       // Leverage used
 	EntryTime    time.Time // Position open time
 	ExitTime     time.Time // Position close time
@@ -27,6 +30,7 @@ type ClosedPnLRecord struct {
 // Used for reconstructing position history with unified algorithm
 type TradeRecord struct {
 	TradeID      string    // Unique trade ID from exchange
+	OrderID      string    // Parent order ID (multiple fills may share one order)
 	Symbol       string    // Trading pair (e.g., "BTCUSDT")
 	Side         string    // "BUY" or "SELL"
 	PositionSide string    // "LONG", "SHORT", or "BOTH" (for one-way mode)

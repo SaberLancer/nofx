@@ -7,10 +7,13 @@ interface ModelCardProps {
   model: AIModel
   selected: boolean
   onClick: () => void
+  /** @deprecated use configuredCount */
   configured?: boolean
+  configuredCount?: number
 }
 
-export function ModelCard({ model, selected, onClick, configured }: ModelCardProps) {
+export function ModelCard({ model, selected, onClick, configured, configuredCount = 0 }: ModelCardProps) {
+  const count = configuredCount > 0 ? configuredCount : configured ? 1 : 0
   return (
     <button
       type="button"
@@ -35,12 +38,12 @@ export function ModelCard({ model, selected, onClick, configured }: ModelCardPro
             <Check className="w-3 h-3 text-black" />
           </div>
         )}
-        {configured && !selected && (
+        {count > 0 && !selected && (
           <div
-            className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center"
-            style={{ background: '#F0B90B' }}
+            className="absolute -top-1 -right-1 min-w-[1rem] h-4 px-1 rounded-full flex items-center justify-center text-[10px] font-bold"
+            style={{ background: '#F0B90B', color: '#000' }}
           >
-            <Check className="w-2.5 h-2.5 text-black" />
+            {count > 1 ? count : <Check className="w-2.5 h-2.5 text-black" />}
           </div>
         )}
       </div>

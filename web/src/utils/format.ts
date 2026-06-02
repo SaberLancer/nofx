@@ -4,6 +4,47 @@
  * formatPrice: 根据数值大小自适应显示精度，避免极小数显示为 0.0000
  */
 
+/** 统一使用北京时间 (Asia/Shanghai, UTC+8) 展示时间 */
+export const BEIJING_TZ = 'Asia/Shanghai'
+
+const beijingDateTimeOptions: Intl.DateTimeFormatOptions = {
+  timeZone: BEIJING_TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+}
+
+const beijingKlineOptions: Intl.DateTimeFormatOptions = {
+  timeZone: BEIJING_TZ,
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+}
+
+/** 格式化为北京时间完整日期时间 */
+export function formatBeijingDateTime(
+  iso: string | number | Date | undefined | null
+): string | null {
+  if (iso === undefined || iso === null || iso === '') return null
+  const d = iso instanceof Date ? iso : new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleString('zh-CN', beijingDateTimeOptions)
+}
+
+/** K 线/短格式北京时间 (MM-DD HH:mm) */
+export function formatBeijingKlineTime(ms: number | undefined | null): string | null {
+  if (ms === undefined || ms === null || !Number.isFinite(ms) || ms <= 0) {
+    return null
+  }
+  return new Date(ms).toLocaleString('zh-CN', beijingKlineOptions)
+}
+
 /**
  * 格式化价格，根据数值大小自适应精度
  * 对于极小的数字（如 meme 币价格 0.000000166），会保留足够的有效数字
@@ -132,12 +173,26 @@ export function formatPercent(value: number | undefined | null, decimals = 2): s
   return value.toFixed(decimals)
 }
 
-/** 回测/历史 K 线时刻（UTC），避免用本地墙钟误导用户 */
+/** 回测/历史 K 线时刻（北京时间） */
 export function formatBacktestSimulationTime(ms: number | undefined | null): string | null {
-  if (ms === undefined || ms === null || !Number.isFinite(ms) || ms <= 0) {
-    return null
-  }
-  return new Date(ms).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
+  return formatBeijingDateTime(ms)
 }
 
-export default { formatPrice, formatQuantity, formatPercent, formatBacktestSimulationTime }
+/** 决策卡片时间（北京时间） */
+export function formatDecisionTimestamps(iso: string | number | undefined | null): {
+  beijing: string
+} | null {
+  const beijing = formatBeijingDateTime(iso)
+  if (!beijing) return null
+  return { beijing }
+}
+
+export default {
+  formatPrice,
+  formatQuantity,
+  formatPercent,
+  formatBeijingDateTime,
+  formatBeijingKlineTime,
+  formatBacktestSimulationTime,
+  formatDecisionTimestamps,
+}

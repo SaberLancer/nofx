@@ -118,8 +118,28 @@ export interface UpdateModelConfigRequest {
       api_key: string
       custom_api_url?: string
       custom_model_name?: string
+      name?: string
     }
   }
+}
+
+export interface CreateModelConfigRequest {
+  provider: string
+  name?: string
+  api_key: string
+  custom_api_url?: string
+  custom_model_name?: string
+  enabled?: boolean
+}
+
+export interface CreateModelConfigResponse {
+  id: string
+  name: string
+  provider: string
+  enabled: boolean
+  customApiUrl?: string
+  customModelName?: string
+  has_api_key?: boolean
 }
 
 export interface UpdateExchangeConfigRequest {

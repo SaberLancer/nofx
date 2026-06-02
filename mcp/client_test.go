@@ -341,6 +341,16 @@ func TestClient_IsRetryableError(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "client timeout awaiting headers (siliconflow/custom)",
+			err:      errors.New(`Post "https://api.siliconflow.cn/chat/completions": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`),
+			expected: true,
+		},
+		{
+			name:     "context deadline exceeded",
+			err:      errors.New("context deadline exceeded"),
+			expected: true,
+		},
+		{
 			name:     "connection reset",
 			err:      errors.New("connection reset by peer"),
 			expected: true,

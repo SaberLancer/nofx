@@ -3,9 +3,12 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"nofx/logger"
 	"nofx/market"
+	"nofx/store"
+	tradpkg "nofx/trader"
 
 	"github.com/gin-gonic/gin"
 )
@@ -186,7 +189,7 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 		return
 	}
 
-	trader, err := s.traderManager.GetTrader(traderID)
+	at, err := s.traderManager.GetTrader(traderID)
 	if err != nil {
 		SafeNotFound(c, "Trader")
 		return
@@ -199,35 +202,144 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 		limit = l
 	}
 
+	// OKX: use exchange positions-history (authoritative closed positions with entry/exit prices).
+	if at.GetExchange() == "okx" {
+		if underlying := at.GetUnderlyingTrader(); underlying != nil {
+			start := time.Now().UTC().Add(-30 * 24 * time.Hour)
+			records, err := underlying.GetClosedPnL(start, limit)
+			if err != nil {
+				SafeInternalError(c, "Fetch OKX position history", err)
+				return
+			}
+			positions := store.ClosedPnLRecordsToTraderPositions(
+				at.GetID(), at.GetExchangeID(), at.GetExchange(), toStoreClosedRecords(records),
+			)
+			stats := store.ComputeFullStatsFromPositions(positions)
+			symbolStats := store.ComputeSymbolStatsFromPositions(positions, 10)
+			directionStats := store.ComputeDirectionStatsFromPositions(positions)
+			c.JSON(http.StatusOK, gin.H{
+				"positions":       positionsToAPIJSON(positions),
+				"stats":           stats,
+				"symbol_stats":    symbolStats,
+				"direction_stats": directionStats,
+				"source":          "okx_positions_history",
+			})
+			return
+		}
+	}
+
 	// Get store
-	store := trader.GetStore()
-	if store == nil {
+	st := at.GetStore()
+	if st == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Store not available"})
 		return
 	}
 
+	// Best-effort sync from exchange closed-position API (fills UI when DB missed OPEN records)
+	if underlying := at.GetUnderlyingTrader(); underlying != nil {
+		if err := tradpkg.SyncClosedPositionsFromExchange(
+			underlying, at.GetID(), at.GetExchangeID(), at.GetExchange(),
+			st, 30*24*time.Hour, 100,
+		); err != nil {
+			logger.Infof("⚠️ Closed position sync before history API: %v", err)
+		}
+	}
+
 	// Get closed positions
-	positions, err := store.Position().GetClosedPositions(trader.GetID(), limit)
+	positions, err := st.Position().GetClosedPositions(at.GetID(), limit)
 	if err != nil {
 		SafeInternalError(c, "Get position history", err)
 		return
 	}
 
 	// Get statistics
-	stats, _ := store.Position().GetFullStats(trader.GetID())
+	stats, _ := st.Position().GetFullStats(at.GetID())
 
 	// Get symbol stats
-	symbolStats, _ := store.Position().GetSymbolStats(trader.GetID(), 10)
+	symbolStats, _ := st.Position().GetSymbolStats(at.GetID(), 10)
 
 	// Get direction stats
-	directionStats, _ := store.Position().GetDirectionStats(trader.GetID())
+	directionStats, _ := st.Position().GetDirectionStats(at.GetID())
 
 	c.JSON(http.StatusOK, gin.H{
-		"positions":       positions,
+		"positions":       positionsToAPIJSON(positions),
 		"stats":           stats,
 		"symbol_stats":    symbolStats,
 		"direction_stats": directionStats,
+		"source":          "local_db",
 	})
+}
+
+func toStoreClosedRecords(records []tradpkg.ClosedPnLRecord) []store.ClosedPnLRecord {
+	out := make([]store.ClosedPnLRecord, len(records))
+	for i, r := range records {
+		out[i] = store.ClosedPnLRecord{
+			Symbol:         r.Symbol,
+			Side:           r.Side,
+			EntryPrice:     r.EntryPrice,
+			ExitPrice:      r.ExitPrice,
+			Quantity:       r.Quantity,
+			RealizedPnL:    r.RealizedPnL,
+			NetRealizedPnL: r.NetRealizedPnL,
+			PnlRatio:       r.PnlRatio,
+			Fee:            r.Fee,
+			FundingFee:     r.FundingFee,
+			Leverage:       r.Leverage,
+			EntryTime:      r.EntryTime.UnixMilli(),
+			ExitTime:       r.ExitTime.UnixMilli(),
+			OrderID:        r.OrderID,
+			CloseType:      r.CloseType,
+			ExchangeID:     r.ExchangeID,
+		}
+	}
+	return out
+}
+
+func positionsToAPIJSON(positions []*store.TraderPosition) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(positions))
+	for _, p := range positions {
+		if p == nil {
+			continue
+		}
+		entryQty := p.EntryQuantity
+		if entryQty == 0 {
+			entryQty = p.Quantity
+		}
+		out = append(out, map[string]interface{}{
+			"id":              p.ID,
+			"trader_id":       p.TraderID,
+			"exchange_id":     p.ExchangeID,
+			"exchange_type":   p.ExchangeType,
+			"symbol":          p.Symbol,
+			"side":            p.Side,
+			"quantity":        p.Quantity,
+			"entry_quantity":  entryQty,
+			"entry_price":     p.EntryPrice,
+			"entry_order_id":  p.EntryOrderID,
+			"entry_time":      msToRFC3339(p.EntryTime),
+			"exit_price":      p.ExitPrice,
+			"exit_order_id":   p.ExitOrderID,
+			"exit_time":       msToRFC3339(p.ExitTime),
+			"realized_pnl":     p.RealizedPnL,
+			"net_realized_pnl": p.NetRealizedPnL,
+			"pnl_ratio":        p.PnlRatio,
+			"fee":              p.Fee,
+			"funding_fee":      p.FundingFee,
+			"leverage":        p.Leverage,
+			"status":          p.Status,
+			"close_reason":    p.CloseReason,
+			"created_at":      msToRFC3339(p.CreatedAt),
+			"updated_at":      msToRFC3339(p.UpdatedAt),
+		})
+	}
+	return out
+}
+
+func msToRFC3339(ms int64) string {
+	if ms <= 0 {
+		return ""
+	}
+	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
 }
 
 // handleTrades Historical trades list

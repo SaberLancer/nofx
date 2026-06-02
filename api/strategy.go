@@ -527,10 +527,7 @@ func (s *Server) handlePreviewPrompt(c *gin.Context) {
 	engine := kernel.NewStrategyEngine(&req.Config)
 
 	// Build system prompt (using built-in method from strategy engine)
-	systemPrompt := engine.BuildSystemPrompt(
-		req.AccountEquity,
-		req.PromptVariant,
-	)
+	systemPrompt := engine.BuildSystemPrompt(req.PromptVariant)
 
 	c.JSON(http.StatusOK, gin.H{
 		"system_prompt":  systemPrompt,
@@ -621,7 +618,7 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 	// Get real market data (using multiple timeframes)
 	marketDataMap := make(map[string]*market.Data)
 	for _, coin := range candidates {
-		data, err := market.GetWithTimeframes(coin.Symbol, timeframes, primaryTimeframe, klineCount)
+		data, err := market.GetWithTimeframes(coin.Symbol, timeframes, primaryTimeframe, klineCount, "")
 		if err != nil {
 			// If getting data for a coin fails, log but continue
 			fmt.Printf("⚠️  Failed to get market data for %s: %v\n", coin.Symbol, err)
@@ -648,7 +645,7 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 
 	// Build real context (for generating User Prompt)
 	testContext := &kernel.Context{
-		CurrentTime:    time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
+		CurrentTime:    kernel.FormatBeijingDateTime(time.Now()),
 		RuntimeMinutes: 0,
 		CallCount:      1,
 		Account: kernel.AccountInfo{
@@ -672,7 +669,7 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 	}
 
 	// Build System Prompt
-	systemPrompt := engine.BuildSystemPrompt(1000.0, req.PromptVariant)
+	systemPrompt := engine.BuildSystemPrompt(req.PromptVariant)
 
 	// Build User Prompt (using real market data)
 	userPrompt := engine.BuildUserPrompt(testContext)

@@ -44,7 +44,17 @@ type UpdateModelConfigRequest struct {
 		APIKey          string `json:"api_key"`
 		CustomAPIURL    string `json:"custom_api_url"`
 		CustomModelName string `json:"custom_model_name"`
+		Name            string `json:"name"`
 	} `json:"models"`
+}
+
+type CreateModelConfigRequest struct {
+	Provider        string `json:"provider" binding:"required"`
+	Name            string `json:"name"`
+	APIKey          string `json:"api_key"`
+	CustomAPIURL    string `json:"custom_api_url"`
+	CustomModelName string `json:"custom_model_name"`
+	Enabled         *bool  `json:"enabled"`
 }
 
 // handleGetModelConfigs Get AI model configurations
@@ -215,7 +225,10 @@ func (s *Server) handleUpdateModelConfigs(c *gin.Context) {
 			tradersToReload[t.ID] = true
 		}
 
-		err := s.store.AIModel().Update(userID, modelID, modelData.Enabled, modelData.APIKey, modelData.CustomAPIURL, modelData.CustomModelName)
+		err := s.store.AIModel().UpdateWithName(
+			userID, modelID, modelData.Name, modelData.Enabled,
+			modelData.APIKey, modelData.CustomAPIURL, modelData.CustomModelName,
+		)
 		if err != nil {
 			SafeInternalError(c, fmt.Sprintf("Update model %s", modelID), err)
 			return
@@ -237,6 +250,122 @@ func (s *Server) handleUpdateModelConfigs(c *gin.Context) {
 
 	logger.Infof("✓ AI model config updated: %+v", req.Models)
 	c.JSON(http.StatusOK, gin.H{"message": "Model configuration updated"})
+}
+
+// handleCreateModelConfig creates a new AI model binding (allows multiple per provider).
+func (s *Server) handleCreateModelConfig(c *gin.Context) {
+	userID := c.GetString("user_id")
+	cfg := config.Get()
+
+	bodyBytes, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
+		return
+	}
+
+	var req CreateModelConfigRequest
+	if !cfg.TransportEncryption {
+		if err := json.Unmarshal(bodyBytes, &req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+	} else {
+		var encryptedPayload crypto.EncryptedPayload
+		if err := json.Unmarshal(bodyBytes, &encryptedPayload); err != nil || encryptedPayload.WrappedKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Encrypted transmission is required"})
+			return
+		}
+		decrypted, err := s.cryptoHandler.cryptoService.DecryptSensitiveData(&encryptedPayload)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to decrypt data"})
+			return
+		}
+		if err := json.Unmarshal([]byte(decrypted), &req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse decrypted data"})
+			return
+		}
+	}
+
+	provider := strings.ToLower(strings.TrimSpace(req.Provider))
+	if provider == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "provider is required"})
+		return
+	}
+
+	customAPIURL := strings.TrimSpace(req.CustomAPIURL)
+	if customAPIURL != "" {
+		cleanURL := strings.TrimSuffix(customAPIURL, "#")
+		var urlErr error
+		if strings.EqualFold(provider, "ollama") {
+			urlErr = security.ValidateLocalServiceURL(cleanURL)
+		} else {
+			urlErr = security.ValidateURL(cleanURL)
+		}
+		if urlErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid custom_api_url: %v", urlErr)})
+			return
+		}
+		customAPIURL = cleanURL
+	}
+
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	model, err := s.store.AIModel().CreateDedicated(
+		userID, provider, req.Name, req.APIKey, customAPIURL, strings.TrimSpace(req.CustomModelName), enabled,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "api_key is required") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		SafeInternalError(c, "Create model config", err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"id":              model.ID,
+		"name":            model.Name,
+		"provider":        model.Provider,
+		"enabled":         model.Enabled,
+		"customApiUrl":    model.CustomAPIURL,
+		"customModelName": model.CustomModelName,
+		"has_api_key":     model.APIKey != "",
+	})
+}
+
+// handleDeleteModelConfig removes an AI model binding by id.
+func (s *Server) handleDeleteModelConfig(c *gin.Context) {
+	userID := c.GetString("user_id")
+	modelID := strings.TrimSpace(c.Param("id"))
+	if modelID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "model id is required"})
+		return
+	}
+
+	traders, _ := s.store.Trader().ListByAIModelID(userID, modelID)
+	if len(traders) > 0 {
+		names := make([]string, 0, len(traders))
+		for _, t := range traders {
+			if t != nil {
+				names = append(names, t.Name)
+			}
+		}
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "model is bound to traders",
+			"traders": names,
+		})
+		return
+	}
+
+	if err := s.store.AIModel().Delete(userID, modelID); err != nil {
+		SafeInternalError(c, "Delete model config", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Model deleted", "id": modelID})
 }
 
 // handleGetSupportedModels Get list of AI models supported by the system

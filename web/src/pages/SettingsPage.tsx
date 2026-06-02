@@ -113,77 +113,74 @@ export function SettingsPage() {
     }
   }
 
+  const handleCreateModel = async (params: {
+    provider: string
+    name: string
+    apiKey: string
+    baseUrl?: string
+    modelName?: string
+  }) => {
+    try {
+      await api.createModelConfig({
+        provider: params.provider,
+        name: params.name,
+        api_key: params.apiKey,
+        custom_api_url: params.baseUrl || '',
+        custom_model_name: params.modelName || '',
+        enabled: true,
+      })
+      toast.success(language === 'zh' ? '模型已创建' : 'Model created')
+      await refreshModelConfigs()
+      setShowModelModal(false)
+      setEditingModel(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create model')
+    }
+  }
+
   const handleSaveModel = async (
     modelId: string,
     apiKey: string,
     customApiUrl?: string,
-    customModelName?: string
+    customModelName?: string,
+    displayName?: string
   ) => {
     try {
       const existingModel = configuredModels.find((m) => m.id === modelId)
-      const modelTemplate = supportedModels.find((m) => m.id === modelId)
-      const modelToUpdate = existingModel || modelTemplate
-      if (!modelToUpdate) { toast.error('Model not found'); return }
-
-      let updatedModels: AIModel[]
-      if (existingModel) {
-        updatedModels = configuredModels.map((m) =>
-          m.id === modelId
-            ? { ...m, apiKey, customApiUrl: customApiUrl || '', customModelName: customModelName || '', enabled: true }
-            : m
-        )
-      } else {
-        updatedModels = [...configuredModels, {
-          ...modelToUpdate,
-          apiKey,
-          customApiUrl: customApiUrl || '',
-          customModelName: customModelName || '',
-          enabled: true,
-        }]
+      if (!existingModel) {
+        toast.error('Model not found')
+        return
       }
 
-      const request = {
-        models: Object.fromEntries(
-          updatedModels.map((m) => [m.provider, {
-            enabled: m.enabled,
-            api_key: m.apiKey || '',
-            custom_api_url: m.customApiUrl || '',
-            custom_model_name: m.customModelName || '',
-          }])
-        ),
-      }
-      await api.updateModelConfigs(request)
-      toast.success('Model config saved')
+      await api.updateModelConfigs({
+        models: {
+          [modelId]: {
+            enabled: true,
+            api_key: apiKey,
+            custom_api_url: customApiUrl || '',
+            custom_model_name: customModelName || '',
+            name: displayName || existingModel.name,
+          },
+        },
+      })
+      toast.success(language === 'zh' ? '模型已保存' : 'Model config saved')
       await refreshModelConfigs()
       setShowModelModal(false)
       setEditingModel(null)
-    } catch {
-      toast.error('Failed to save model config')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save model config')
     }
   }
 
   const handleDeleteModel = async (modelId: string) => {
     try {
-      const updatedModels = configuredModels.map((m) =>
-        m.id === modelId ? { ...m, apiKey: '', customApiUrl: '', customModelName: '', enabled: false } : m
-      )
-      const request = {
-        models: Object.fromEntries(
-          updatedModels.map((m) => [m.provider, {
-            enabled: m.enabled,
-            api_key: m.apiKey || '',
-            custom_api_url: m.customApiUrl || '',
-            custom_model_name: m.customModelName || '',
-          }])
-        ),
-      }
-      await api.updateModelConfigs(request)
+      await api.deleteModelConfig(modelId)
       await refreshModelConfigs()
       setShowModelModal(false)
       setEditingModel(null)
-      toast.success('Model config removed')
-    } catch {
-      toast.error('Failed to remove model config')
+      toast.success(language === 'zh' ? '模型已删除' : 'Model deleted')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete model')
     }
   }
 
@@ -380,8 +377,11 @@ export function SettingsPage() {
                           <p className="text-sm font-medium text-white">{model.name}</p>
                           <div className="flex flex-wrap items-center gap-1.5 mt-1">
                             <p className="text-xs text-zinc-500">{model.provider}</p>
+                            {model.customModelName ? (
+                              <span className="text-[11px] text-zinc-500 font-mono">{model.customModelName}</span>
+                            ) : null}
                             {configBadge('API Key', !!model.has_api_key)}
-                            {model.customModelName ? configBadge('Custom Model', true) : null}
+                            {model.customModelName ? configBadge('Variant', true) : null}
                             {model.customApiUrl ? configBadge('Base URL', true) : null}
                           </div>
                         </div>
@@ -483,6 +483,7 @@ export function SettingsPage() {
             configuredModels={configuredModels}
             editingModelId={editingModel}
             onSave={handleSaveModel}
+            onCreate={handleCreateModel}
             onDelete={handleDeleteModel}
             onClose={() => { setShowModelModal(false); setEditingModel(null) }}
             language={language}

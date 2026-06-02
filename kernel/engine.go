@@ -35,6 +35,8 @@ type PositionInfo struct {
 	LiquidationPrice float64 `json:"liquidation_price"`
 	MarginUsed       float64 `json:"margin_used"`
 	UpdateTime       int64   `json:"update_time"` // Position update timestamp (milliseconds)
+	// AutoPnLEnforceTier: 0=none, 1=lock tier1 already applied by backend, 2=tier2, etc.
+	AutoPnLEnforceTier int `json:"auto_pnl_enforce_tier,omitempty"`
 }
 
 // AccountInfo account information
@@ -100,6 +102,7 @@ type Context struct {
 	TradingStats       *TradingStats                      `json:"trading_stats,omitempty"`
 	RecentOrders       []RecentOrder                      `json:"recent_orders,omitempty"`
 	MarketDataMap      map[string]*market.Data            `json:"-"`
+	MarketDataFailures map[string]string                  `json:"-"` // symbol -> reason when market data could not be loaded
 	MultiTFMarket      map[string]map[string]*market.Data `json:"-"`
 	OITopDataMap       map[string]*OITopData              `json:"-"`
 	QuantDataMap       map[string]*QuantData              `json:"-"`
@@ -108,6 +111,7 @@ type Context struct {
 	PriceRankingData   *nofxos.PriceRankingData           `json:"-"` // Market-wide price gainers/losers
 	BTCETHLeverage     int                                `json:"-"`
 	AltcoinLeverage    int                                `json:"-"`
+	KlineExchange      string                             `json:"-"` // preferred kline source, e.g. okx/binance
 	Timeframes         []string                           `json:"-"`
 	// ReferenceTimeMs is the simulated "now" for backtest (ms). When zero, wall clock is used.
 	ReferenceTimeMs int64 `json:"-"`
@@ -149,7 +153,11 @@ type FullDecision struct {
 	Decisions           []Decision `json:"decisions"`
 	RawResponse         string     `json:"raw_response"`
 	Timestamp           time.Time  `json:"timestamp"`
-	AIRequestDurationMs int64      `json:"ai_request_duration_ms,omitempty"`
+	AIRequestDurationMs     int64    `json:"ai_request_duration_ms,omitempty"`
+	PromptTokens            int      `json:"prompt_tokens,omitempty"`
+	PromptCacheHitTokens    int      `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens   int      `json:"prompt_cache_miss_tokens,omitempty"`
+	ValidationNotes         []string `json:"validation_notes,omitempty"` // per-symbol downgrades (invalid → wait)
 }
 
 // QuantData quantitative data structure (fund flow, position changes, price changes)

@@ -12,7 +12,13 @@ import {
   CLAW402_MODELS,
   AI_PROVIDER_CONFIG,
   getShortName,
+  providerVariants,
 } from './model-constants'
+
+/** Edit mode: key already stored server-side (GET /models only returns has_api_key). */
+function modelHasStoredApiKey(model: AIModel | undefined): boolean {
+  return Boolean(model?.has_api_key || model?.apiKey?.trim())
+}
 
 interface ModelConfigModalProps {
   allModels: AIModel[]
@@ -22,8 +28,16 @@ interface ModelConfigModalProps {
     modelId: string,
     apiKey: string,
     baseUrl?: string,
-    modelName?: string
+    modelName?: string,
+    displayName?: string
   ) => void
+  onCreate?: (params: {
+    provider: string
+    name: string
+    apiKey: string
+    baseUrl?: string
+    modelName?: string
+  }) => void
   onDelete: (modelId: string) => void
   onClose: () => void
   language: Language
@@ -34,6 +48,7 @@ export function ModelConfigModal({
   configuredModels,
   editingModelId,
   onSave,
+  onCreate,
   onDelete,
   onClose,
   language,
@@ -43,6 +58,7 @@ export function ModelConfigModal({
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [modelName, setModelName] = useState('')
+  const [displayName, setDisplayName] = useState('')
 
   // Always prefer allModels (supportedModels) for provider/id lookup;
   // fall back to configuredModels for edit mode details (apiKey etc.)
@@ -50,21 +66,35 @@ export function ModelConfigModal({
     allModels?.find((m) => m.id === selectedModelId) ||
     configuredModels?.find((m) => m.id === selectedModelId)
 
+  const editingModel =
+    editingModelId != null
+      ? configuredModels?.find((m) => m.id === editingModelId)
+      : undefined
+  const hasStoredApiKey = Boolean(editingModelId && modelHasStoredApiKey(editingModel ?? selectedModel))
+
   useEffect(() => {
     if (editingModelId && selectedModel) {
       setApiKey(selectedModel.apiKey || '')
       setBaseUrl(selectedModel.customApiUrl || '')
       setModelName(selectedModel.customModelName || '')
+      setDisplayName(selectedModel.name || '')
     }
   }, [editingModelId, selectedModel])
 
   const handleSelectModel = (modelId: string) => {
     setSelectedModelId(modelId)
     const model = (allModels || []).find((m) => m.id === modelId)
+    const provider = model?.provider || modelId
+    const variants = providerVariants(provider)
+    const defaultVariant = variants[0]?.id || AI_PROVIDER_CONFIG[provider]?.defaultModel || ''
     if (model?.provider === 'ollama') {
       setApiKey('ollama')
       setBaseUrl('http://localhost:11434/v1')
       setModelName(model.defaultModel || 'llama3.1')
+      setDisplayName('Ollama Local')
+    } else {
+      setModelName(defaultVariant)
+      setDisplayName(variants[0]?.label || model?.name || provider)
     }
     setCurrentStep(1)
   }
@@ -84,18 +114,41 @@ export function ModelConfigModal({
       allModels?.find((m) => m.id === selectedModelId) ||
       configuredModels?.find((m) => m.id === selectedModelId)
     const isOllama = model?.provider === 'ollama'
-    const effectiveApiKey = apiKey.trim() || (isOllama ? 'ollama' : '')
-    if (!selectedModelId || !effectiveApiKey) return
-    onSave(
-      selectedModelId,
-      effectiveApiKey,
-      baseUrl.trim() || undefined,
-      modelName.trim() || undefined
-    )
+    const effectiveApiKey =
+      apiKey.trim() || (isOllama ? 'ollama' : '') || (hasStoredApiKey ? '' : '')
+    if (!selectedModelId) return
+    if (!hasStoredApiKey && !effectiveApiKey) return
+    const variant = modelName.trim() || undefined
+    if (editingModelId) {
+      onSave(
+        editingModelId,
+        apiKey.trim(),
+        baseUrl.trim() || undefined,
+        variant,
+        displayName.trim() || undefined
+      )
+      return
+    }
+    const provider = model?.provider || selectedModelId
+    if (!onCreate) return
+    onCreate({
+      provider,
+      name: displayName.trim() || variant || provider,
+      apiKey: effectiveApiKey,
+      baseUrl: baseUrl.trim() || undefined,
+      modelName: variant,
+    })
   }
 
   const availableModels = allModels || []
-  const configuredIds = new Set(configuredModels?.map(m => m.id) || [])
+  const configuredCountByProvider = (configuredModels || []).reduce(
+    (acc, m) => {
+      const p = m.provider || m.id
+      acc.set(p, (acc.get(p) || 0) + 1)
+      return acc
+    },
+    new Map<string, number>()
+  )
   const stepLabels = [t('modelConfig.selectModel', language), t('modelConfig.configureApi', language)]
 
   return (
@@ -176,7 +229,7 @@ export function ModelConfigModal({
           {currentStep === 0 && !editingModelId && (
             <ModelSelectionStep
               availableModels={availableModels}
-              configuredIds={configuredIds}
+              configuredCountByProvider={configuredCountByProvider}
               selectedModelId={selectedModelId}
               onSelectModel={handleSelectModel}
               language={language}
@@ -189,6 +242,7 @@ export function ModelConfigModal({
               apiKey={apiKey}
               modelName={modelName}
               editingModelId={editingModelId}
+              hasStoredApiKey={hasStoredApiKey}
               onApiKeyChange={setApiKey}
               onModelNameChange={setModelName}
               onBack={handleBack}
@@ -207,10 +261,13 @@ export function ModelConfigModal({
                 apiKey={apiKey}
                 baseUrl={baseUrl}
                 modelName={modelName}
+                displayName={displayName}
                 editingModelId={editingModelId}
+                hasStoredApiKey={hasStoredApiKey}
                 onApiKeyChange={setApiKey}
                 onBaseUrlChange={setBaseUrl}
                 onModelNameChange={setModelName}
+                onDisplayNameChange={setDisplayName}
                 onBack={handleBack}
                 onSubmit={handleSubmit}
                 language={language}
@@ -226,13 +283,13 @@ export function ModelConfigModal({
 
 function ModelSelectionStep({
   availableModels,
-  configuredIds,
+  configuredCountByProvider,
   selectedModelId,
   onSelectModel,
   language,
 }: {
   availableModels: AIModel[]
-  configuredIds: Set<string>
+  configuredCountByProvider: Map<string, number>
   selectedModelId: string
   onSelectModel: (modelId: string) => void
   language: Language
@@ -294,7 +351,7 @@ function ModelSelectionStep({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {configuredIds.has(availableModels.find(m => m.provider === 'claw402')?.id || '') && (
+              {(configuredCountByProvider.get('claw402') || 0) > 0 && (
                 <div className="w-2 h-2 rounded-full" style={{ background: '#00E096' }} />
               )}
               <div
@@ -330,7 +387,7 @@ function ModelSelectionStep({
             model={model}
             selected={selectedModelId === model.id}
             onClick={() => onSelectModel(model.id)}
-            configured={configuredIds.has(model.id)}
+            configuredCount={configuredCountByProvider.get(model.provider || model.id) || 0}
           />
         ))}
       </div>
@@ -350,7 +407,7 @@ function ModelSelectionStep({
                 model={model}
                 selected={selectedModelId === model.id}
                 onClick={() => onSelectModel(model.id)}
-                configured={configuredIds.has(model.id)}
+                configuredCount={configuredCountByProvider.get(model.provider || model.id) || 0}
               />
             ))}
           </div>
@@ -367,6 +424,7 @@ function Claw402ConfigForm({
   apiKey,
   modelName,
   editingModelId,
+  hasStoredApiKey,
   onApiKeyChange,
   onModelNameChange,
   onBack,
@@ -376,6 +434,7 @@ function Claw402ConfigForm({
   apiKey: string
   modelName: string
   editingModelId: string | null
+  hasStoredApiKey: boolean
   onApiKeyChange: (value: string) => void
   onModelNameChange: (value: string) => void
   onBack: () => void
@@ -410,9 +469,11 @@ function Claw402ConfigForm({
   }
 
   const isKeyValid =
-    apiKey.length === 66 &&
-    apiKey.startsWith('0x') &&
-    /^0x[0-9a-fA-F]{64}$/.test(apiKey)
+    hasStoredApiKey && !apiKey.trim()
+      ? true
+      : apiKey.length === 66 &&
+        apiKey.startsWith('0x') &&
+        /^0x[0-9a-fA-F]{64}$/.test(apiKey)
 
   // Truncate address for display
 
@@ -1045,10 +1106,13 @@ function StandardProviderConfigForm({
   apiKey,
   baseUrl,
   modelName,
+  displayName,
   editingModelId,
+  hasStoredApiKey,
   onApiKeyChange,
   onBaseUrlChange,
   onModelNameChange,
+  onDisplayNameChange,
   onBack,
   onSubmit,
   language,
@@ -1057,14 +1121,28 @@ function StandardProviderConfigForm({
   apiKey: string
   baseUrl: string
   modelName: string
+  displayName: string
   editingModelId: string | null
+  hasStoredApiKey: boolean
   onApiKeyChange: (value: string) => void
   onBaseUrlChange: (value: string) => void
   onModelNameChange: (value: string) => void
+  onDisplayNameChange: (value: string) => void
   onBack: () => void
   onSubmit: (e: React.FormEvent) => void
   language: Language
 }) {
+  const variants = providerVariants(selectedModel.provider || selectedModel.id)
+  const isNew = !editingModelId
+
+  const handleVariantChange = (variantId: string) => {
+    onModelNameChange(variantId)
+    const v = variants.find((x) => x.id === variantId)
+    if (isNew && v) {
+      onDisplayNameChange(v.label)
+    }
+  }
+
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       {/* Selected Model Header */}
@@ -1112,6 +1190,42 @@ function StandardProviderConfigForm({
           </a>
         )}
       </div>
+
+      {isNew && (
+        <div>
+          <label className="block text-xs font-medium mb-2" style={{ color: '#848E9C' }}>
+            {language === 'zh' ? '配置名称' : 'Config name'}
+          </label>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => onDisplayNameChange(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl text-sm"
+            style={{ background: '#0B0E11', border: '1px solid #2B3139', color: '#EAECEF' }}
+            placeholder={language === 'zh' ? '例如 DeepSeek V4 Flash' : 'e.g. DeepSeek V4 Flash'}
+          />
+        </div>
+      )}
+
+      {variants.length > 0 && (
+        <div>
+          <label className="block text-xs font-medium mb-2" style={{ color: '#848E9C' }}>
+            {language === 'zh' ? '模型版本 (custom_model_name)' : 'Model variant'}
+          </label>
+          <select
+            value={modelName}
+            onChange={(e) => handleVariantChange(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl text-sm"
+            style={{ background: '#0B0E11', border: '1px solid #2B3139', color: '#EAECEF' }}
+          >
+            {variants.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label} ({v.id})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Ollama local setup hint */}
       {selectedModel.provider === 'ollama' && (
@@ -1206,8 +1320,10 @@ function StandardProviderConfigForm({
           value={apiKey}
           onChange={(e) => onApiKeyChange(e.target.value)}
           placeholder={
-            editingModelId && selectedModel.has_api_key
-              ? '已保存，如需更换请重新输入'
+            hasStoredApiKey
+              ? language === 'zh'
+                ? '已保存，留空表示不修改；仅改模型版本可直接保存'
+                : 'Key saved — leave blank to keep; change model version and save'
               : selectedModel.provider === 'blockrun-base'
               ? '0x... (EVM private key)'
               : selectedModel.provider === 'blockrun-sol'
@@ -1220,7 +1336,7 @@ function StandardProviderConfigForm({
             border: '1px solid #2B3139',
             color: '#EAECEF',
           }}
-          required
+          required={!hasStoredApiKey && selectedModel.provider !== 'ollama'}
         />
       </div>
 
@@ -1342,7 +1458,9 @@ function StandardProviderConfigForm({
           type="submit"
           disabled={
             !selectedModel ||
-            (!apiKey.trim() && selectedModel.provider !== 'ollama')
+            (!hasStoredApiKey &&
+              !apiKey.trim() &&
+              selectedModel.provider !== 'ollama')
           }
           className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ background: '#8B5CF6', color: '#fff' }}

@@ -6,7 +6,6 @@ import (
 	"nofx/provider/nofxos"
 	"sort"
 	"strings"
-	"time"
 )
 
 // ============================================================================
@@ -105,8 +104,9 @@ func formatContextData(ctx *Context, lang Language) string {
 
 // formatHeaderZH formats header information (Chinese)
 func formatHeaderZH(ctx *Context) string {
-	return fmt.Sprintf("# 📊 交易决策请求\n\n时间: %s | 周期: #%d | 运行时长: %d 分钟\n\n",
-		ctx.CurrentTime, ctx.CallCount, ctx.RuntimeMinutes)
+	refTime := DecisionReferenceTime(ctx)
+	return fmt.Sprintf("# 📊 交易决策请求\n\n%s\n\n",
+		FormatDecisionContextTimeLine(refTime, LangChinese, ctx.CallCount, ctx.RuntimeMinutes))
 }
 
 // formatAccountZH formats account information (Chinese)
@@ -323,7 +323,7 @@ func formatKlineDataZH(symbol string, tfData map[string]*market.TimeframeSeriesD
 		if data, ok := tfData[tf]; ok && len(data.Klines) > 0 {
 			sb.WriteString(fmt.Sprintf("#### %s 时间框架 (从旧到新)\n\n", tf))
 			sb.WriteString("```\n")
-			sb.WriteString("时间(UTC)      开盘      最高      最低      收盘      成交量\n")
+			sb.WriteString("时间(北京)      开盘      最高      最低      收盘      成交量\n")
 
 			// Only show the latest 30 klines
 			startIdx := 0
@@ -333,9 +333,8 @@ func formatKlineDataZH(symbol string, tfData map[string]*market.TimeframeSeriesD
 
 			for i := startIdx; i < len(data.Klines); i++ {
 				k := data.Klines[i]
-				t := time.UnixMilli(k.Time).UTC()
 				sb.WriteString(fmt.Sprintf("%s    %.4f    %.4f    %.4f    %.4f    %.2f\n",
-					t.Format("01-02 15:04"),
+					FormatBeijingKlineTimeMs(k.Time),
 					k.Open,
 					k.High,
 					k.Low,
@@ -374,8 +373,9 @@ func getOIInterpretationZH(oiChange, priceChange string) string {
 
 // formatHeaderEN formats header information (English)
 func formatHeaderEN(ctx *Context) string {
-	return fmt.Sprintf("# 📊 Trading Decision Request\n\nTime: %s | Period: #%d | Runtime: %d minutes\n\n",
-		ctx.CurrentTime, ctx.CallCount, ctx.RuntimeMinutes)
+	refTime := DecisionReferenceTime(ctx)
+	return fmt.Sprintf("# 📊 Trading Decision Request\n\n%s\n\n",
+		FormatDecisionContextTimeLine(refTime, LangEnglish, ctx.CallCount, ctx.RuntimeMinutes))
 }
 
 // formatAccountEN formats account information (English)
@@ -590,7 +590,7 @@ func formatKlineDataEN(symbol string, tfData map[string]*market.TimeframeSeriesD
 		if data, ok := tfData[tf]; ok && len(data.Klines) > 0 {
 			sb.WriteString(fmt.Sprintf("#### %s Timeframe (oldest → latest)\n\n", tf))
 			sb.WriteString("```\n")
-			sb.WriteString("Time(UTC)      Open      High      Low       Close     Volume\n")
+			sb.WriteString("Time(Beijing)  Open      High      Low       Close     Volume\n")
 
 			startIdx := 0
 			if len(data.Klines) > 30 {
@@ -599,9 +599,8 @@ func formatKlineDataEN(symbol string, tfData map[string]*market.TimeframeSeriesD
 
 			for i := startIdx; i < len(data.Klines); i++ {
 				k := data.Klines[i]
-				t := time.UnixMilli(k.Time).UTC()
 				sb.WriteString(fmt.Sprintf("%s    %.4f    %.4f    %.4f    %.4f    %.2f\n",
-					t.Format("01-02 15:04"),
+					FormatBeijingKlineTimeMs(k.Time),
 					k.Open,
 					k.High,
 					k.Low,

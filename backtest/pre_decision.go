@@ -97,16 +97,20 @@ func (r *Runner) preDecisionWatchSymbols(ctx *kernel.Context) []string {
 	return symbols
 }
 
-// shouldGateAIByPreDecision mirrors live trader pre-decision gating.
-// Returns (gate=true) to skip AI, and a log line for ExecutionLog.
-func (r *Runner) shouldGateAIByPreDecision(ctx *kernel.Context) (bool, string) {
+// preDecisionOutcome mirrors live trader pre-decision routing.
+type preDecisionOutcome int
+
+const (
+	preDecisionFullAI preDecisionOutcome = iota
+	preDecisionPositionsOnlyAI
+	preDecisionSkipAI
+)
+
+func (r *Runner) evaluatePreDecision(ctx *kernel.Context) (preDecisionOutcome, string) {
 	if !r.preDecisionEnabled() {
-		return false, ""
+		return preDecisionFullAI, ""
 	}
 	cfg := r.preDecisionConfig()
-	if cfg.AlwaysWhenPositions && ctx.Account.PositionCount > 0 {
-		return false, ""
-	}
 
 	symbols := make([]string, 0, len(ctx.CandidateCoins))
 	for _, coin := range ctx.CandidateCoins {
@@ -114,11 +118,19 @@ func (r *Runner) shouldGateAIByPreDecision(ctx *kernel.Context) (bool, string) {
 	}
 	signal, ok := r.preDecisionTracker.AnyDirectionalSignal(symbols)
 	if ok {
-		return false, fmt.Sprintf("pre-decision signal: %s %s buy=%.1f%% sell=%.1f%% momentum=%+.3f%% ticks=%d",
+		return preDecisionFullAI, fmt.Sprintf("pre-decision signal: %s %s buy=%.1f%% sell=%.1f%% momentum=%+.3f%% ticks=%d",
 			signal.Symbol, signal.Direction, signal.BuyPressure*100, signal.SellPressure*100, signal.MomentumPct, signal.TickCount)
 	}
+
+	waitReason := ""
 	if len(symbols) == 0 {
-		return true, "pre-decision: no candidate symbols"
+		waitReason = "pre-decision: no candidate symbols"
+	} else {
+		waitReason = fmt.Sprintf("pre-decision: waiting tick trend (%s)", strings.Join(symbols, ", "))
 	}
-	return true, fmt.Sprintf("pre-decision: waiting tick trend (%s)", strings.Join(symbols, ", "))
+	hasPositions := len(ctx.Positions) > 0 || ctx.Account.PositionCount > 0
+	if hasPositions && cfg.AlwaysWhenPositions {
+		return preDecisionPositionsOnlyAI, waitReason
+	}
+	return preDecisionSkipAI, waitReason
 }

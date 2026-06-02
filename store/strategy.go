@@ -13,7 +13,6 @@ import (
 // Hard limits to prevent token explosion in AI requests
 const (
 	MaxCandidateCoins = 10
-	MaxPositions      = 3
 	MaxTimeframes     = 4
 	MinKlineCount     = 10
 	MaxKlineCount     = 30
@@ -68,12 +67,12 @@ func (c *StrategyConfig) ClampLimits() {
 		c.Indicators.Klines.SelectedTimeframes = c.Indicators.Klines.SelectedTimeframes[:MaxTimeframes]
 	}
 
-	// Clamp max positions
-	if c.RiskControl.MaxPositions < 1 {
-		c.RiskControl.MaxPositions = 1
+	// Clamp max positions: 0 = auto (candidate coin count); hard cap at MaxCandidateCoins
+	if c.RiskControl.MaxPositions < 0 {
+		c.RiskControl.MaxPositions = 0
 	}
-	if c.RiskControl.MaxPositions > MaxPositions {
-		c.RiskControl.MaxPositions = MaxPositions
+	if c.RiskControl.MaxPositions > MaxCandidateCoins {
+		c.RiskControl.MaxPositions = MaxCandidateCoins
 	}
 
 	// Clamp leverage limits to the same bounds as the manual config UI.
@@ -893,7 +892,7 @@ type ExternalDataSource struct {
 
 // RiskControlConfig risk control configuration
 type RiskControlConfig struct {
-	// Max number of coins held simultaneously (CODE ENFORCED)
+	// Max number of coins held simultaneously (0 = auto: candidate coin count; CODE ENFORCED)
 	MaxPositions int `json:"max_positions"`
 
 	// BTC/ETH exchange leverage for opening positions (AI guided)
@@ -1015,7 +1014,7 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			PriceRankingLimit:    10,
 		},
 		RiskControl: RiskControlConfig{
-			MaxPositions:                 3,   // Max 3 coins simultaneously (CODE ENFORCED)
+			MaxPositions:                 0,   // 0 = auto: effective candidate coin count
 			BTCETHMaxLeverage:            5,   // BTC/ETH exchange leverage (AI guided)
 			AltcoinMaxLeverage:           5,   // Altcoin exchange leverage (AI guided)
 			BTCETHMaxPositionValueRatio:  5.0, // BTC/ETH: max position = 5x equity (CODE ENFORCED)

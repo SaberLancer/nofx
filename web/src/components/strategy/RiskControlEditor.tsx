@@ -1,12 +1,14 @@
 import { Shield, AlertTriangle } from 'lucide-react'
 import type { RiskControlConfig } from '../../types'
 import { riskControl, ts } from '../../i18n/strategy-translations'
+import { effectiveMaxPositions } from '../../utils/strategyCoinCount'
 
 interface RiskControlEditorProps {
   config: RiskControlConfig
   onChange: (config: RiskControlConfig) => void
   disabled?: boolean
   language: string
+  candidateCoinCount?: number
 }
 
 export function RiskControlEditor({
@@ -14,6 +16,7 @@ export function RiskControlEditor({
   onChange,
   disabled,
   language,
+  candidateCoinCount = 3,
 }: RiskControlEditorProps) {
   const updateField = <K extends keyof RiskControlConfig>(
     key: K,
@@ -23,6 +26,10 @@ export function RiskControlEditor({
       onChange({ ...config, [key]: value })
     }
   }
+
+  const maxCap = Math.max(1, candidateCoinCount)
+  const followCandidates = !config.max_positions || config.max_positions <= 0
+  const effectiveMax = effectiveMaxPositions(config.max_positions, maxCap)
 
   return (
     <div className="space-y-6">
@@ -46,14 +53,62 @@ export function RiskControlEditor({
             <p className="text-xs mb-2" style={{ color: '#848E9C' }}>
               {ts(riskControl.maxPositionsDesc, language)}
             </p>
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-lg" style={{ color: '#0ECB81' }}>
-                {config.max_positions ?? 3}
+            <label className="flex items-center gap-2 mb-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={followCandidates}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    updateField('max_positions', 0)
+                  } else {
+                    updateField('max_positions', maxCap)
+                  }
+                }}
+                disabled={disabled}
+                className="accent-green-500"
+              />
+              <span className="text-sm" style={{ color: '#EAECEF' }}>
+                {ts(riskControl.maxPositionsAuto, language).replace(
+                  '{count}',
+                  String(maxCap)
+                )}
               </span>
-              <span className="text-xs" style={{ color: '#848E9C' }}>
-                System enforced
-              </span>
-            </div>
+            </label>
+            {!followCandidates && (
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="number"
+                  value={config.max_positions ?? maxCap}
+                  onChange={(e) => {
+                    const parsed = parseInt(e.target.value, 10)
+                    if (Number.isNaN(parsed)) return
+                    updateField(
+                      'max_positions',
+                      Math.min(maxCap, Math.max(1, parsed))
+                    )
+                  }}
+                  disabled={disabled}
+                  min={1}
+                  max={maxCap}
+                  step={1}
+                  className="w-24 px-3 py-2 rounded font-mono"
+                  style={{
+                    background: '#1E2329',
+                    border: '1px solid #2B3139',
+                    color: '#0ECB81',
+                  }}
+                />
+                <span className="text-xs" style={{ color: '#848E9C' }}>
+                  / {maxCap}
+                </span>
+              </div>
+            )}
+            <p className="text-xs" style={{ color: '#848E9C' }}>
+              {ts(riskControl.maxPositionsEffective, language).replace(
+                '{count}',
+                String(effectiveMax)
+              )}
+            </p>
           </div>
         </div>
 

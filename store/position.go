@@ -111,7 +111,10 @@ type TraderPosition struct {
 	ExitOrderID        string  `gorm:"column:exit_order_id;default:''" json:"exit_order_id"`
 	ExitTime           int64   `gorm:"column:exit_time;index:idx_positions_exit" json:"exit_time"` // Unix milliseconds UTC, 0 means not set
 	RealizedPnL        float64 `gorm:"column:realized_pnl;default:0" json:"realized_pnl"`
+	NetRealizedPnL     float64 `gorm:"-" json:"net_realized_pnl,omitempty"`
+	PnlRatio           float64 `gorm:"-" json:"pnl_ratio,omitempty"`
 	Fee                float64 `gorm:"column:fee;default:0" json:"fee"`
+	FundingFee         float64 `gorm:"-" json:"funding_fee,omitempty"`
 	Leverage           int     `gorm:"column:leverage;default:1" json:"leverage"`
 	Status             string  `gorm:"column:status;default:OPEN;index:idx_positions_status" json:"status"`
 	CloseReason        string  `gorm:"column:close_reason;default:''" json:"close_reason"`
@@ -380,6 +383,18 @@ func (s *PositionStore) GetOpenPositionBySymbol(traderID, symbol, side string) (
 	return nil, err
 }
 
+// CountClosedPositions returns how many CLOSED rows exist for a trader.
+func (s *PositionStore) CountClosedPositions(traderID string) (int, error) {
+	var count int64
+	err := s.db.Model(&TraderPosition{}).
+		Where("trader_id = ? AND status = ?", traderID, "CLOSED").
+		Count(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("failed to count closed positions: %w", err)
+	}
+	return int(count), nil
+}
+
 // GetClosedPositions gets closed positions
 func (s *PositionStore) GetClosedPositions(traderID string, limit int) ([]*TraderPosition, error) {
 	var positions []*TraderPosition
@@ -396,7 +411,7 @@ func (s *PositionStore) GetClosedPositions(traderID string, limit int) ([]*Trade
 			pos.EntryQuantity = pos.Quantity
 		}
 	}
-	return positions, nil
+	return DedupeClosedPositions(positions), nil
 }
 
 // GetAllOpenPositions gets all traders' open positions

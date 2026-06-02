@@ -894,7 +894,7 @@ func TestStrategyCreateUsesConfigPatch(t *testing.T) {
 	if cfg.CoinSource.UseOILow {
 		t.Fatalf("expected OI low disabled when source_type is static, got %+v", cfg.CoinSource)
 	}
-	if cfg.RiskControl.MaxPositions != 3 || cfg.RiskControl.MinConfidence != 80 {
+	if cfg.RiskControl.MaxPositions != 1 || cfg.RiskControl.MinConfidence != 80 {
 		t.Fatalf("expected risk patch to apply, got %+v", cfg.RiskControl)
 	}
 	if !strings.Contains(cfg.CustomPrompt, "BTC 趋势做空") || !strings.Contains(cfg.PromptSections.EntryStandards, "做空") {
@@ -912,7 +912,7 @@ func TestAIStrategySystemEnforcedFieldsAreDisplayedButNotEditable(t *testing.T) 
 		},
 	}
 	reply := formatStrategyCreateFinalConfirmation("zh", session, cfg)
-	for _, want := range []string{"最大持仓数（System enforced）", "BTC/ETH 单币仓位上限（System enforced）", "最大保证金使用率（System enforced）", "最小开仓金额（System enforced）"} {
+	for _, want := range []string{"最大持仓数", "BTC/ETH 单币仓位上限（System enforced）", "最大保证金使用率（System enforced）", "最小开仓金额（System enforced）"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected final summary to display %q, got: %s", want, reply)
 		}

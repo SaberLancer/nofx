@@ -117,6 +117,45 @@ type DecisionAction struct {
 	ProtectionNote  string `json:"protection_note,omitempty"`  // Details when unprotected
 }
 
+const DecisionActionUnavailable = "unavailable"
+
+// AppendMissingCandidateDecisions adds placeholder rows for configured candidates that
+// have no decision entry yet (e.g. market data fetch failed or AI omitted the symbol).
+func AppendMissingCandidateDecisions(record *DecisionRecord, candidates []string, failures map[string]string) {
+	if record == nil || len(candidates) == 0 {
+		return
+	}
+
+	present := make(map[string]struct{}, len(record.Decisions))
+	for _, d := range record.Decisions {
+		present[d.Symbol] = struct{}{}
+	}
+
+	for _, sym := range candidates {
+		if sym == "" {
+			continue
+		}
+		if _, ok := present[sym]; ok {
+			continue
+		}
+
+		reason := "AI did not output a decision for this candidate"
+		if failures != nil {
+			if r, ok := failures[sym]; ok && strings.TrimSpace(r) != "" {
+				reason = r
+			}
+		}
+
+		record.Decisions = append(record.Decisions, DecisionAction{
+			Symbol:  sym,
+			Action:  DecisionActionUnavailable,
+			Success: false,
+			Error:   reason,
+		})
+		record.ExecutionLog = append(record.ExecutionLog, fmt.Sprintf("⚠️ %s unavailable: %s", sym, reason))
+	}
+}
+
 // Statistics statistics information
 type Statistics struct {
 	TotalCycles         int `json:"total_cycles"`

@@ -529,7 +529,6 @@ func removeLockedStrategyCreateFields(configMap map[string]any) {
 }
 
 func removeLockedAIRiskFields(risk map[string]any) {
-	delete(risk, "max_positions")
 	delete(risk, "btc_eth_max_position_value_ratio")
 	delete(risk, "btceth_max_position_value_ratio")
 	delete(risk, "altcoin_max_position_value_ratio")
@@ -1160,7 +1159,7 @@ func formatStrategyCreateFinalConfirmation(lang string, session skillSession, cf
 				fmt.Sprintf("- 山寨币最大杠杆：%d倍", cfg.RiskControl.AltcoinMaxLeverage),
 				fmt.Sprintf("- 最小置信度：%d", cfg.RiskControl.MinConfidence),
 				fmt.Sprintf("- 最小盈亏比：%.2f", cfg.RiskControl.MinRiskRewardRatio),
-				fmt.Sprintf("- 最大持仓数（System enforced）：%d", cfg.RiskControl.MaxPositions),
+				fmt.Sprintf("- 最大持仓数：%d", cfg.EffectiveMaxPositions()),
 				fmt.Sprintf("- BTC/ETH 单币仓位上限（System enforced）：账户权益 %.2f 倍", cfg.RiskControl.BTCETHMaxPositionValueRatio),
 				fmt.Sprintf("- 山寨币单币仓位上限（System enforced）：账户权益 %.2f 倍", cfg.RiskControl.AltcoinMaxPositionValueRatio),
 				fmt.Sprintf("- 最大保证金使用率（System enforced）：%.0f%%", cfg.RiskControl.MaxMarginUsage*100),
@@ -1757,7 +1756,7 @@ func formatStrategyDetailResponse(lang string, strategy *store.Strategy, cfg sto
 			lines = append(lines, "- K线周期："+strings.Join(timeframes, " / "))
 		}
 		lines = append(lines, fmt.Sprintf("- 仓位风险：最多持仓 %d，BTC/ETH 最大杠杆 %d，山寨最大杠杆 %d，最低置信度 %d",
-			cfg.RiskControl.MaxPositions, cfg.RiskControl.BTCETHMaxLeverage, cfg.RiskControl.AltcoinMaxLeverage, cfg.RiskControl.MinConfidence))
+			cfg.EffectiveMaxPositions(), cfg.RiskControl.BTCETHMaxLeverage, cfg.RiskControl.AltcoinMaxLeverage, cfg.RiskControl.MinConfidence))
 		lines = append(lines, fmt.Sprintf("- 风控阈值：最小盈亏比 %.2f；最大保证金使用率 %.2f；最小开仓金额 %.2f",
 			cfg.RiskControl.MinRiskRewardRatio, cfg.RiskControl.MaxMarginUsage, cfg.RiskControl.MinPositionSize))
 		if len(indicatorBits) > 0 {
@@ -1814,7 +1813,7 @@ func formatStrategyDetailResponse(lang string, strategy *store.Strategy, cfg sto
 		lines = append(lines, "- Timeframes: "+strings.Join(timeframes, " / "))
 	}
 	lines = append(lines, fmt.Sprintf("- Risk: max positions %d, BTC/ETH max leverage %d, alt max leverage %d, min confidence %d",
-		cfg.RiskControl.MaxPositions, cfg.RiskControl.BTCETHMaxLeverage, cfg.RiskControl.AltcoinMaxLeverage, cfg.RiskControl.MinConfidence))
+		cfg.EffectiveMaxPositions(), cfg.RiskControl.BTCETHMaxLeverage, cfg.RiskControl.AltcoinMaxLeverage, cfg.RiskControl.MinConfidence))
 	lines = append(lines, fmt.Sprintf("- Risk thresholds: min RR %.2f, max margin usage %.2f, min position size %.2f",
 		cfg.RiskControl.MinRiskRewardRatio, cfg.RiskControl.MaxMarginUsage, cfg.RiskControl.MinPositionSize))
 	if len(indicatorBits) > 0 {

@@ -3,12 +3,14 @@ package kernel
 import (
 	"fmt"
 	"nofx/logger"
+	"strings"
 )
 
 // ============================================================================
 // Decision Validation
 // ============================================================================
 
+// validateDecisions validates all decisions; any failure fails the whole batch (legacy).
 func validateDecisions(
 	decisions []Decision,
 	accountEquity float64,
@@ -23,6 +25,44 @@ func validateDecisions(
 		}
 	}
 	return nil
+}
+
+// sanitizeDecisions downgrades invalid per-symbol decisions to wait so other symbols can still execute.
+func sanitizeDecisions(
+	decisions []Decision,
+	accountEquity float64,
+	btcEthLeverage, altcoinLeverage int,
+	btcEthPosRatio, altcoinPosRatio float64,
+	protection OpenProtectionParams,
+	marketPrices map[string]float64,
+) []string {
+	var notes []string
+	for i := range decisions {
+		if err := validateDecision(&decisions[i], accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, protection, marketPrices); err != nil {
+			sym := decisions[i].Symbol
+			prev := decisions[i].Action
+			note := fmt.Sprintf("%s: %s validation failed → wait (%v)", sym, prev, err)
+			logger.Warnf("⚠️ [Decision Sanitize] %s", note)
+			downgradeFailedDecisionToWait(&decisions[i], err.Error())
+			notes = append(notes, note)
+		}
+	}
+	return notes
+}
+
+func downgradeFailedDecisionToWait(d *Decision, reason string) {
+	d.Action = "wait"
+	d.Leverage = 0
+	d.PositionSizeUSD = 0
+	d.StopLoss = 0
+	d.TakeProfit = 0
+	d.CloseRatio = 0
+	d.RiskUSD = 0
+	if strings.TrimSpace(d.Reasoning) == "" {
+		d.Reasoning = "CODE: downgraded to wait — " + reason
+	} else {
+		d.Reasoning = d.Reasoning + " | CODE: downgraded to wait — " + reason
+	}
 }
 
 func validateDecision(

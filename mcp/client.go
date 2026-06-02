@@ -26,6 +26,7 @@ var (
 	retryableErrors = []string{
 		"EOF",
 		"timeout",
+		"deadline exceeded",
 		"connection reset",
 		"connection refused",
 		"temporary failure",
@@ -47,11 +48,13 @@ var (
 
 // TokenUsage represents token usage from AI API response
 type TokenUsage struct {
-	Provider         string // payment channel: "claw402" or native provider name
-	Model            string
-	PromptTokens     int
-	CompletionTokens int
-	TotalTokens      int
+	Provider              string // payment channel: "claw402" or native provider name
+	Model                 string
+	PromptTokens          int
+	CompletionTokens      int
+	TotalTokens           int
+	PromptCacheHitTokens  int // provider prefix cache (e.g. DeepSeek / SiliconFlow)
+	PromptCacheMissTokens int
 }
 
 // Channel returns the payment channel category for telemetry.
@@ -82,6 +85,9 @@ type Client struct {
 	// When provider.DeepSeekClient embeds Client, Hooks point to DeepSeekClient
 	// This way methods called in Call() are automatically dispatched to the overridden version
 	Hooks ClientHooks
+
+	// LastUsage is set after each successful ParseMCPResponseFull (for execution logs / diagnostics).
+	LastUsage TokenUsage
 }
 
 // New creates default client (backward compatible)
@@ -284,9 +290,11 @@ func (client *Client) ParseMCPResponseFull(body []byte) (*LLMResponse, error) {
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
+			PromptTokens          int `json:"prompt_tokens"`
+			CompletionTokens      int `json:"completion_tokens"`
+			TotalTokens           int `json:"total_tokens"`
+			PromptCacheHitTokens  int `json:"prompt_cache_hit_tokens"`
+			PromptCacheMissTokens int `json:"prompt_cache_miss_tokens"`
 		} `json:"usage"`
 	}
 
@@ -298,15 +306,24 @@ func (client *Client) ParseMCPResponseFull(body []byte) (*LLMResponse, error) {
 		return nil, fmt.Errorf("API returned empty response")
 	}
 
+	client.LastUsage = TokenUsage{
+		Provider:              client.Provider,
+		Model:                 client.Model,
+		PromptTokens:          result.Usage.PromptTokens,
+		CompletionTokens:      result.Usage.CompletionTokens,
+		TotalTokens:           result.Usage.TotalTokens,
+		PromptCacheHitTokens:  result.Usage.PromptCacheHitTokens,
+		PromptCacheMissTokens: result.Usage.PromptCacheMissTokens,
+	}
+
 	// Report token usage if callback is set
 	if TokenUsageCallback != nil && result.Usage.TotalTokens > 0 {
-		TokenUsageCallback(TokenUsage{
-			Provider:         client.Provider,
-			Model:            client.Model,
-			PromptTokens:     result.Usage.PromptTokens,
-			CompletionTokens: result.Usage.CompletionTokens,
-			TotalTokens:      result.Usage.TotalTokens,
-		})
+		TokenUsageCallback(client.LastUsage)
+	}
+	if result.Usage.PromptCacheHitTokens > 0 || result.Usage.PromptCacheMissTokens > 0 {
+		client.Log.Infof("📦 [%s] Prompt cache: hit=%d miss=%d (of input %d)",
+			client.String(), result.Usage.PromptCacheHitTokens, result.Usage.PromptCacheMissTokens,
+			result.Usage.PromptCacheHitTokens+result.Usage.PromptCacheMissTokens)
 	}
 
 	msg := result.Choices[0].Message
@@ -436,10 +453,10 @@ func (c *Client) BaseClient() *Client { return c }
 
 // IsRetryableError determines if error is retryable (network errors, timeouts, etc.)
 func (client *Client) IsRetryableError(err error) bool {
-	errStr := err.Error()
-	// Network errors, timeouts, EOF, etc. can be retried
+	errStr := strings.ToLower(err.Error())
+	// Network errors, timeouts, EOF, etc. can be retried (case-insensitive match)
 	for _, retryable := range client.Cfg.RetryableErrors {
-		if strings.Contains(errStr, retryable) {
+		if strings.Contains(errStr, strings.ToLower(retryable)) {
 			return true
 		}
 	}
@@ -815,9 +832,11 @@ func ParseSSEStream(body io.Reader, onChunk func(string), onLine func()) (string
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
 			Usage *struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
-				TotalTokens      int `json:"total_tokens"`
+				PromptTokens          int `json:"prompt_tokens"`
+				CompletionTokens      int `json:"completion_tokens"`
+				TotalTokens           int `json:"total_tokens"`
+				PromptCacheHitTokens  int `json:"prompt_cache_hit_tokens"`
+				PromptCacheMissTokens int `json:"prompt_cache_miss_tokens"`
 			} `json:"usage,omitempty"`
 		}
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
@@ -826,9 +845,11 @@ func ParseSSEStream(body io.Reader, onChunk func(string), onLine func()) (string
 
 		if chunk.Usage != nil && chunk.Usage.TotalTokens > 0 {
 			usage = &TokenUsage{
-				PromptTokens:     chunk.Usage.PromptTokens,
-				CompletionTokens: chunk.Usage.CompletionTokens,
-				TotalTokens:      chunk.Usage.TotalTokens,
+				PromptTokens:          chunk.Usage.PromptTokens,
+				CompletionTokens:      chunk.Usage.CompletionTokens,
+				TotalTokens:           chunk.Usage.TotalTokens,
+				PromptCacheHitTokens:  chunk.Usage.PromptCacheHitTokens,
+				PromptCacheMissTokens: chunk.Usage.PromptCacheMissTokens,
 			}
 		}
 
@@ -861,10 +882,12 @@ func ReportStreamUsage(usage *TokenUsage, provider, model string) {
 		return
 	}
 	TokenUsageCallback(TokenUsage{
-		Provider:         provider,
-		Model:            model,
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
-		TotalTokens:      usage.TotalTokens,
+		Provider:              provider,
+		Model:                 model,
+		PromptTokens:          usage.PromptTokens,
+		CompletionTokens:      usage.CompletionTokens,
+		TotalTokens:           usage.TotalTokens,
+		PromptCacheHitTokens:  usage.PromptCacheHitTokens,
+		PromptCacheMissTokens: usage.PromptCacheMissTokens,
 	})
 }

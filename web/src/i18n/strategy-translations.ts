@@ -144,7 +144,21 @@ export const gridRisk = {
 export const riskControl = {
   positionLimits: { zh: '仓位限制', en: 'Position Limits', es: 'Límites de Posición' },
   maxPositions: { zh: '最大持仓数量', en: 'Max Positions', es: 'Máximo de Posiciones' },
-  maxPositionsDesc: { zh: '同时持有的最大币种数量', en: 'Maximum coins held simultaneously', es: 'Monedas máximas simultáneas' },
+  maxPositionsDesc: {
+    zh: '同时持有的最大币种数量；未手动设置时默认等于候选币数量',
+    en: 'Maximum coins held simultaneously; defaults to candidate coin count when unset',
+    es: 'Monedas máximas simultáneas; por defecto igual al número de candidatos',
+  },
+  maxPositionsAuto: {
+    zh: '跟随候选币数量（当前 {count}）',
+    en: 'Follow candidate coin count (currently {count})',
+    es: 'Seguir candidatos (actualmente {count})',
+  },
+  maxPositionsEffective: {
+    zh: '当前生效：{count} 个',
+    en: 'Effective limit: {count}',
+    es: 'Límite efectivo: {count}',
+  },
   tradingLeverage: { zh: '交易杠杆（交易所杠杆）', en: 'Trading Leverage (Exchange)', es: 'Apalancamiento (Exchange)' },
   btcEthLeverage: { zh: 'BTC/ETH 交易杠杆', en: 'BTC/ETH Trading Leverage', es: 'BTC/ETH Apalancamiento' },
   btcEthLeverageDesc: { zh: '交易所开仓使用的杠杆倍数', en: 'Exchange leverage for opening positions', es: 'Apalancamiento del exchange' },
@@ -265,9 +279,9 @@ export const preDecision = {
   minMomentumPctDesc: { zh: '窗口内首尾价格变化百分比阈值（%）', en: 'Min price change % over the window', es: 'Cambio de precio mínimo (%)' },
   alwaysWhenPositions: { zh: '有持仓时始终调用 AI', en: 'Always Call AI With Open Positions', es: 'Siempre AI con Posiciones' },
   alwaysWhenPositionsDesc: {
-    zh: '有持仓时跳过前置门禁，便于 AI 处理止盈止损；无持仓时才等待方向信号',
-    en: 'Bypass gate when holding positions (for exit management); gate only applies when flat',
-    es: 'Omitir gate con posiciones abiertas',
+    zh: '前置未通过且有持仓时，仍调用 AI，但仅分析持仓币种；无持仓时整轮跳过 AI',
+    en: 'When the gate fails but you have positions, still call AI on position symbols only; skip AI when flat',
+    es: 'Si falla el gate con posiciones, IA solo en símbolos en cartera; sin posiciones, omitir IA',
   },
   signalLogic: { zh: '信号逻辑', en: 'Signal Logic', es: 'Lógica de Señal' },
   signalLogicDesc: {

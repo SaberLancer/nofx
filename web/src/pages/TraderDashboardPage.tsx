@@ -3,7 +3,7 @@ import { mutate } from 'swr'
 import { api } from '../lib/api'
 import { ChartTabs } from '../components/charts/ChartTabs'
 import { DecisionCard } from '../components/trader/DecisionCard'
-import { PositionHistory } from '../components/trader/PositionHistory'
+import { PositionHistory, positionHistorySWRKey } from '../components/trader/PositionHistory'
 import { PunkAvatar, getTraderAvatar } from '../components/common/PunkAvatar'
 import { confirmToast, notify } from '../lib/notify'
 import { formatPrice, formatQuantity } from '../utils/format'
@@ -230,6 +230,11 @@ export function TraderDashboardPage({
             await Promise.all([
                 mutate(`positions-${selectedTraderId}`),
                 mutate(`account-${selectedTraderId}`),
+                mutate(
+                    (key) =>
+                        Array.isArray(key) &&
+                        key[0] === positionHistorySWRKey(selectedTraderId)
+                ),
             ])
         } catch (err: unknown) {
             const errorMsg =
@@ -619,6 +624,7 @@ export function TraderDashboardPage({
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right hidden md:table-cell" title={t('positionValue', language)}>{t('traderDashboard.value', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center hidden md:table-cell" title={t('leverage', language)}>{t('traderDashboard.lev', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right" title={t('unrealizedPnL', language)}>{t('traderDashboard.uPnL', language)}</th>
+                                                    <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right" title={t('traderDashboard.marginPnlPctHint', language)}>{t('traderDashboard.marginPnlPct', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right hidden md:table-cell" title={t('liqPrice', language)}>{t('traderDashboard.liq', language)}</th>
                                                 </tr>
                                             </thead>
@@ -694,6 +700,20 @@ export function TraderDashboardPage({
                                                             >
                                                                 {pos.unrealized_pnl >= 0 ? '+' : ''}
                                                                 {pos.unrealized_pnl.toFixed(2)}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right">
+                                                            <span
+                                                                className={`font-bold ${(pos.unrealized_pnl_pct ?? 0) >= 0 ? 'text-nofx-green' : 'text-nofx-red'}`}
+                                                                style={{
+                                                                    textShadow:
+                                                                        (pos.unrealized_pnl_pct ?? 0) >= 0
+                                                                            ? '0 0 10px rgba(14,203,129,0.3)'
+                                                                            : '0 0 10px rgba(246,70,93,0.3)',
+                                                                }}
+                                                            >
+                                                                {(pos.unrealized_pnl_pct ?? 0) >= 0 ? '+' : ''}
+                                                                {(pos.unrealized_pnl_pct ?? 0).toFixed(2)}%
                                                             </span>
                                                         </td>
                                                         <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-muted hidden md:table-cell">{formatPrice(pos.liquidation_price)}</td>
@@ -843,7 +863,10 @@ export function TraderDashboardPage({
                                 {t('positionHistory.title', language)}
                             </h2>
                         </div>
-                        <PositionHistory traderId={selectedTraderId} />
+                        <PositionHistory
+                            traderId={selectedTraderId}
+                            openPositionCount={account?.position_count}
+                        />
                     </div>
                 )}
             </div>

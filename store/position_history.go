@@ -174,19 +174,22 @@ func (s *PositionStore) calculateStreaks(traderID string, summary *HistorySummar
 // ClosedPnLRecord represents a closed position record from exchange
 // All time fields use int64 millisecond timestamps (UTC)
 type ClosedPnLRecord struct {
-	Symbol      string
-	Side        string
-	EntryPrice  float64
-	ExitPrice   float64
-	Quantity    float64
-	RealizedPnL float64
-	Fee         float64
-	Leverage    int
-	EntryTime   int64 // Unix milliseconds UTC
-	ExitTime    int64 // Unix milliseconds UTC
-	OrderID     string
-	CloseType   string
-	ExchangeID  string
+	Symbol         string
+	Side           string
+	EntryPrice     float64
+	ExitPrice      float64
+	Quantity       float64
+	RealizedPnL    float64
+	NetRealizedPnL float64
+	PnlRatio       float64
+	Fee            float64
+	FundingFee     float64
+	Leverage       int
+	EntryTime      int64 // Unix milliseconds UTC
+	ExitTime       int64 // Unix milliseconds UTC
+	OrderID        string
+	CloseType      string
+	ExchangeID     string
 }
 
 // CreateFromClosedPnL creates a closed position record from exchange data
@@ -218,6 +221,16 @@ func (s *PositionStore) CreateFromClosedPnL(traderID, exchangeID, exchangeType s
 		return false, err
 	}
 	if exists {
+		return false, nil
+	}
+
+	// Same trade may already exist from order-sync close (different exchange_position_id).
+	if existing, err := s.FindMatchingClosedPosition(traderID, record.Symbol, side, record.ExitTime, record.Quantity); err != nil {
+		return false, err
+	} else if existing != nil {
+		if err := s.UpdateClosedFromExchangeRecord(existing.ID, exchangeID, exchangePositionID, record); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 
@@ -270,6 +283,56 @@ func (s *PositionStore) CreateFromClosedPnL(traderID, exchangeID, exchangeType s
 	}
 
 	return true, nil
+}
+
+// UpdateClosedFromExchangeRecord patches an existing CLOSED row with exchange-accurate fields.
+func (s *PositionStore) UpdateClosedFromExchangeRecord(positionID int64, exchangeID, exchangePositionID string, record *ClosedPnLRecord) error {
+	if positionID <= 0 || record == nil {
+		return nil
+	}
+
+	updates := map[string]interface{}{
+		"updated_at": time.Now().UTC().UnixMilli(),
+	}
+	if record.EntryPrice > 0 {
+		updates["entry_price"] = record.EntryPrice
+	}
+	if record.ExitPrice > 0 {
+		updates["exit_price"] = record.ExitPrice
+	}
+	if record.Quantity > 0 {
+		updates["quantity"] = record.Quantity
+		updates["entry_quantity"] = record.Quantity
+	}
+	if record.RealizedPnL != 0 {
+		updates["realized_pnl"] = record.RealizedPnL
+	}
+	if record.Fee != 0 {
+		updates["fee"] = record.Fee
+	}
+	if record.Leverage > 0 {
+		updates["leverage"] = record.Leverage
+	}
+	if record.OrderID != "" {
+		updates["exit_order_id"] = record.OrderID
+	}
+	if record.ExitTime > 0 {
+		updates["exit_time"] = record.ExitTime
+	}
+	if record.EntryTime > 0 {
+		updates["entry_time"] = record.EntryTime
+	}
+	if exchangePositionID != "" && !isSyntheticExchangePositionID(exchangePositionID) {
+		updates["exchange_position_id"] = exchangePositionID
+	}
+	if exchangeID != "" {
+		updates["exchange_id"] = exchangeID
+	}
+	if record.CloseType != "" {
+		updates["close_reason"] = record.CloseType
+	}
+
+	return s.db.Model(&TraderPosition{}).Where("id = ? AND status = ?", positionID, "CLOSED").Updates(updates).Error
 }
 
 // GetLastClosedPositionTime gets the most recent exit time (Unix ms)

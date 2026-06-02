@@ -388,103 +388,78 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
   }
 
   const handleDeleteModelConfig = async (modelId: string) => {
-    await handleDeleteConfig({
-      id: modelId,
-      type: 'model',
-      checkInUse: isModelUsedByAnyTrader,
-      getUsingTraders: getTradersUsingModel,
-      cannotDeleteKey: 'cannotDeleteModelInUse',
-      confirmDeleteKey: 'confirmDeleteModel',
-      allItems: allModels,
-      clearFields: (m) => ({
-        ...m,
-        apiKey: '',
-        customApiUrl: '',
-        customModelName: '',
-        enabled: false,
-      }),
-      buildRequest: (models) => ({
-        models: Object.fromEntries(
-          models.map((model) => [
-            model.provider,
-            {
-              enabled: model.enabled,
-              api_key: model.apiKey || '',
-              custom_api_url: model.customApiUrl || '',
-              custom_model_name: model.customModelName || '',
-            },
-          ])
-        ),
-      }),
-      updateApi: api.updateModelConfigs,
-      refreshApi: api.getModelConfigs,
-      setItems: (items) => {
-        setAllModels([...items])
-      },
-      closeModal: () => {
-        setShowModelModal(false)
-        setEditingModel(null)
-      },
-      errorKey: 'deleteConfigFailed',
-    })
+    if (isModelUsedByAnyTrader(modelId)) {
+      const tradersUsing = getTradersUsingModel(modelId)
+      toast.error(
+        `${t('cannotDeleteModelInUse', language)}: ${tradersUsing.map((tr) => tr.trader_name).join(', ')}`
+      )
+      return
+    }
+    try {
+      await api.deleteModelConfig(modelId)
+      toast.success(t('aiTradersToast.modelConfigUpdated', language))
+      const refreshedModels = await api.getModelConfigs()
+      setAllModels(refreshedModels)
+      setShowModelModal(false)
+      setEditingModel(null)
+    } catch (error) {
+      console.error('Failed to delete model config:', error)
+      toast.error(t('deleteConfigFailed', language))
+    }
+  }
+
+  const handleCreateModelConfig = async (params: {
+    provider: string
+    name: string
+    apiKey: string
+    baseUrl?: string
+    modelName?: string
+  }) => {
+    try {
+      await api.createModelConfig({
+        provider: params.provider,
+        name: params.name,
+        api_key: params.apiKey,
+        custom_api_url: params.baseUrl || '',
+        custom_model_name: params.modelName || '',
+        enabled: true,
+      })
+      toast.success(t('aiTradersToast.modelConfigUpdated', language))
+      const refreshedModels = await api.getModelConfigs()
+      setAllModels(refreshedModels)
+      setShowModelModal(false)
+      setEditingModel(null)
+    } catch (error) {
+      console.error('Failed to create model config:', error)
+      toast.error(t('saveConfigFailed', language))
+    }
   }
 
   const handleSaveModelConfig = async (
     modelId: string,
     apiKey: string,
     customApiUrl?: string,
-    customModelName?: string
+    customModelName?: string,
+    displayName?: string
   ) => {
     try {
       const existingModel = allModels?.find((m) => m.id === modelId)
-      let updatedModels
-
-      const modelToUpdate =
-        existingModel || supportedModels?.find((m) => m.id === modelId)
-      if (!modelToUpdate) {
+      if (!existingModel) {
         toast.error(t('modelNotExist', language))
         return
       }
 
-      if (existingModel) {
-        updatedModels =
-          allModels?.map((m) =>
-            m.id === modelId
-              ? {
-                ...m,
-                apiKey,
-                customApiUrl: customApiUrl || '',
-                customModelName: customModelName || '',
-                enabled: true,
-              }
-              : m
-          ) || []
-      } else {
-        const newModel = {
-          ...modelToUpdate,
-          apiKey,
-          customApiUrl: customApiUrl || '',
-          customModelName: customModelName || '',
-          enabled: true,
-        }
-        updatedModels = [...(allModels || []), newModel]
-      }
-
-      const request = {
-        models: Object.fromEntries(
-          updatedModels.map((model) => [
-            model.provider,
-            {
-              enabled: model.enabled,
-              api_key: model.apiKey || '',
-              custom_api_url: model.customApiUrl || '',
-              custom_model_name: model.customModelName || '',
-            },
-          ])
-        ),
-      }
-
-      await api.updateModelConfigs(request)
+      await api.updateModelConfigs({
+        models: {
+          [modelId]: {
+            enabled: true,
+            api_key: apiKey,
+            custom_api_url: customApiUrl || '',
+            custom_model_name: customModelName || '',
+            name: displayName || existingModel.name,
+          },
+        },
+      })
       toast.success(t('aiTradersToast.modelConfigUpdated', language))
 
       const refreshedModels = await api.getModelConfigs()
@@ -759,6 +734,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
             configuredModels={allModels}
             editingModelId={editingModel}
             onSave={handleSaveModelConfig}
+            onCreate={handleCreateModelConfig}
             onDelete={handleDeleteModelConfig}
             onClose={() => {
               setShowModelModal(false)

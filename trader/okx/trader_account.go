@@ -3,7 +3,9 @@ package okx
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"nofx/logger"
+	"nofx/market"
 	"nofx/trader/types"
 	"strconv"
 	"strings"
@@ -163,111 +165,202 @@ func (t *OKXTrader) GetMarketPrice(symbol string) (float64, error) {
 	return price, nil
 }
 
-// GetClosedPnL retrieves closed position PnL records from OKX
+// GetClosedPnL retrieves closed position PnL records from OKX positions-history API.
 // OKX API: /api/v5/account/positions-history
 func (t *OKXTrader) GetClosedPnL(startTime time.Time, limit int) ([]types.ClosedPnLRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	var (
+		records    []types.ClosedPnLRecord
+		afterUTime string
+	)
+
+	for len(records) < limit {
+		pageLimit := 100
+		if remaining := limit - len(records); remaining < pageLimit {
+			pageLimit = remaining
+		}
+
+		rows, err := t.fetchPositionsHistoryPage(startTime, pageLimit, afterUTime)
+		if err != nil {
+			return records, err
+		}
+		if len(rows) == 0 {
+			break
+		}
+
+		reachedWindowStart := false
+		for _, row := range rows {
+			record, ok := t.okxPositionHistoryRowToRecord(row)
+			if !ok {
+				continue
+			}
+			if !startTime.IsZero() && record.ExitTime.Before(startTime) {
+				reachedWindowStart = true
+				continue
+			}
+			records = append(records, record)
+			if len(records) >= limit {
+				break
+			}
+		}
+
+		if len(records) >= limit || reachedWindowStart || len(rows) < pageLimit {
+			break
+		}
+
+		afterUTime = rows[len(rows)-1].UTime
+		if afterUTime == "" {
+			break
+		}
+	}
+
+	return records, nil
+}
+
+func (t *OKXTrader) fetchPositionsHistoryPage(startTime time.Time, limit int, afterUTime string) ([]okxPositionHistoryRow, error) {
+	path := buildOKXPositionsHistoryPath(startTime, limit, afterUTime)
+	data, err := t.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions history: %w", err)
+	}
+	rows, err := parseOKXPositionsHistoryData(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse positions history: %w", err)
+	}
+	return rows, nil
+}
+
+func (t *OKXTrader) okxPositionHistoryRowToRecord(pos okxPositionHistoryRow) (types.ClosedPnLRecord, bool) {
+	record := types.ClosedPnLRecord{}
+
+	parts := strings.Split(pos.InstID, "-")
+	if len(parts) >= 2 {
+		record.Symbol = parts[0] + parts[1]
+	} else {
+		record.Symbol = pos.InstID
+	}
+	record.Symbol = market.Normalize(record.Symbol)
+
+	record.Side = pos.PosSide
+	if record.Side == "" {
+		record.Side = pos.Direction
+	}
+
+	record.EntryPrice, _ = strconv.ParseFloat(pos.OpenAvgPx, 64)
+	record.ExitPrice, _ = strconv.ParseFloat(pos.CloseAvgPx, 64)
+
+	qty, _ := strconv.ParseFloat(pos.CloseTotalPos, 64)
+	if inst, err := t.getInstrument(record.Symbol); err == nil && inst.CtVal > 0 {
+		qty = qty * inst.CtVal
+	}
+	record.Quantity = qty
+
+	if record.Symbol == "" || record.Quantity <= 0 || record.EntryPrice <= 0 || record.ExitPrice <= 0 {
+		return record, false
+	}
+
+	// OKX: pnl = gross trading PnL (matches 平仓收益); realizedPnl = net after fee/funding.
+	record.RealizedPnL, _ = strconv.ParseFloat(pos.Pnl, 64)
+	record.NetRealizedPnL, _ = strconv.ParseFloat(pos.RealizedPnl, 64)
+	if record.RealizedPnL == 0 && record.NetRealizedPnL != 0 {
+		record.RealizedPnL = record.NetRealizedPnL
+	}
+
+	fee, _ := strconv.ParseFloat(pos.Fee, 64)
+	fundingFee, _ := strconv.ParseFloat(pos.FundingFee, 64)
+	record.Fee = math.Abs(fee)
+	record.FundingFee = fundingFee
+
+	lev, _ := strconv.ParseFloat(pos.Lever, 64)
+	record.Leverage = int(lev)
+
+	// OKX pnlRatio is net ROI (after fees). Order UI「平仓收益率」uses gross PnL / margin.
+	if record.RealizedPnL != 0 && record.EntryPrice > 0 && record.Quantity > 0 && record.Leverage > 0 {
+		margin := record.EntryPrice * record.Quantity / float64(record.Leverage)
+		if margin > 0 {
+			record.PnlRatio = record.RealizedPnL / margin
+		}
+	} else {
+		record.PnlRatio, _ = strconv.ParseFloat(pos.PnlRatio, 64)
+	}
+
+	cTime, _ := strconv.ParseInt(pos.CTime, 10, 64)
+	uTime, _ := strconv.ParseInt(pos.UTime, 10, 64)
+	record.EntryTime = time.UnixMilli(cTime).UTC()
+	record.ExitTime = time.UnixMilli(uTime).UTC()
+
+	switch pos.Type {
+	case "3", "4":
+		record.CloseType = "liquidation"
+	default:
+		record.CloseType = "unknown"
+	}
+
+	record.ExchangeID = pos.PosId
+	return record, true
+}
+
+type okxPositionHistoryRow struct {
+	InstID        string `json:"instId"`
+	Direction     string `json:"direction"`
+	PosSide       string `json:"posSide"`
+	OpenAvgPx     string `json:"openAvgPx"`
+	CloseAvgPx    string `json:"closeAvgPx"`
+	CloseTotalPos string `json:"closeTotalPos"`
+	Pnl           string `json:"pnl"`
+	RealizedPnl   string `json:"realizedPnl"`
+	PnlRatio      string `json:"pnlRatio"`
+	Fee           string `json:"fee"`
+	FundingFee    string `json:"fundingFee"`
+	Lever         string `json:"lever"`
+	CTime         string `json:"cTime"`
+	UTime         string `json:"uTime"`
+	Type          string `json:"type"`
+	PosId         string `json:"posId"`
+}
+
+func buildOKXPositionsHistoryPath(startTime time.Time, limit int, afterUTime string) string {
 	if limit <= 0 {
 		limit = 100
 	}
 	if limit > 100 {
 		limit = 100
 	}
-
-	// Build query path with parameters
 	path := fmt.Sprintf("/api/v5/account/positions-history?instType=SWAP&limit=%d", limit)
-	if !startTime.IsZero() {
-		path += fmt.Sprintf("&after=%d", startTime.UnixMilli())
+	if afterUTime != "" {
+		path += "&after=" + afterUTime
+	} else if !startTime.IsZero() {
+		// First page: records with uTime newer than startTime (forward sync / lookback window).
+		path += fmt.Sprintf("&before=%d", startTime.UnixMilli())
 	}
+	return path
+}
 
-	data, err := t.doRequest("GET", path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get positions history: %w", err)
+func parseOKXPositionsHistoryData(data []byte) ([]okxPositionHistoryRow, error) {
+	if len(data) == 0 {
+		return nil, nil
 	}
-
-	var resp struct {
-		Code string `json:"code"`
-		Msg  string `json:"msg"`
-		Data []struct {
-			InstID        string `json:"instId"`        // Instrument ID (e.g., "BTC-USDT-SWAP")
-			Direction     string `json:"direction"`     // Position direction: "long" or "short"
-			OpenAvgPx     string `json:"openAvgPx"`     // Average open price
-			CloseAvgPx    string `json:"closeAvgPx"`    // Average close price
-			CloseTotalPos string `json:"closeTotalPos"` // Closed position quantity
-			RealizedPnl   string `json:"realizedPnl"`   // Realized PnL
-			Fee           string `json:"fee"`           // Total fee
-			FundingFee    string `json:"fundingFee"`    // Funding fee
-			Lever         string `json:"lever"`         // Leverage
-			CTime         string `json:"cTime"`         // Position open time
-			UTime         string `json:"uTime"`         // Position close time
-			Type          string `json:"type"`          // Close type: 1=close position, 2=partial close, 3=liquidation, 4=partial liquidation
-			PosId         string `json:"posId"`         // Position ID
-		} `json:"data"`
+	var rows []okxPositionHistoryRow
+	if err := json.Unmarshal(data, &rows); err == nil {
+		return rows, nil
 	}
-
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	// Backward compat if caller passes full envelope.
+	var envelope struct {
+		Code string                  `json:"code"`
+		Msg  string                  `json:"msg"`
+		Data []okxPositionHistoryRow `json:"data"`
 	}
-
-	if resp.Code != "0" {
-		return nil, fmt.Errorf("OKX API error: %s - %s", resp.Code, resp.Msg)
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, err
 	}
-
-	records := make([]types.ClosedPnLRecord, 0, len(resp.Data))
-
-	for _, pos := range resp.Data {
-		record := types.ClosedPnLRecord{}
-
-		// Convert instrument ID to standard format (BTC-USDT-SWAP -> BTCUSDT)
-		parts := strings.Split(pos.InstID, "-")
-		if len(parts) >= 2 {
-			record.Symbol = parts[0] + parts[1]
-		} else {
-			record.Symbol = pos.InstID
-		}
-
-		// Side
-		record.Side = pos.Direction // OKX already returns "long" or "short"
-
-		// Prices
-		record.EntryPrice, _ = strconv.ParseFloat(pos.OpenAvgPx, 64)
-		record.ExitPrice, _ = strconv.ParseFloat(pos.CloseAvgPx, 64)
-
-		// Quantity
-		record.Quantity, _ = strconv.ParseFloat(pos.CloseTotalPos, 64)
-
-		// PnL
-		record.RealizedPnL, _ = strconv.ParseFloat(pos.RealizedPnl, 64)
-
-		// Fee
-		fee, _ := strconv.ParseFloat(pos.Fee, 64)
-		fundingFee, _ := strconv.ParseFloat(pos.FundingFee, 64)
-		record.Fee = -fee + fundingFee // Fee is negative in OKX
-
-		// Leverage
-		lev, _ := strconv.ParseFloat(pos.Lever, 64)
-		record.Leverage = int(lev)
-
-		// Times
-		cTime, _ := strconv.ParseInt(pos.CTime, 10, 64)
-		uTime, _ := strconv.ParseInt(pos.UTime, 10, 64)
-		record.EntryTime = time.UnixMilli(cTime).UTC()
-		record.ExitTime = time.UnixMilli(uTime).UTC()
-
-		// Close type
-		switch pos.Type {
-		case "1", "2":
-			record.CloseType = "unknown" // Could be manual or AI, need to cross-reference
-		case "3", "4":
-			record.CloseType = "liquidation"
-		default:
-			record.CloseType = "unknown"
-		}
-
-		// Exchange ID
-		record.ExchangeID = pos.PosId
-
-		records = append(records, record)
+	if envelope.Code != "" && envelope.Code != "0" && envelope.Code != "1" {
+		return nil, fmt.Errorf("OKX API error: %s - %s", envelope.Code, envelope.Msg)
 	}
-
-	return records, nil
+	return envelope.Data, nil
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"nofx/kernel"
@@ -94,20 +95,37 @@ func (r *Runner) stepOnce() error {
 		record.CycleNumber = callCount
 
 		r.ingestPreDecisionTicks(ctx, ts)
-		if gate, reason := r.shouldGateAIByPreDecision(ctx); gate {
+		preOutcome, preReason := r.evaluatePreDecision(ctx)
+		switch preOutcome {
+		case preDecisionSkipAI:
 			record.Success = true
 			record.PreDecisionSkipped = true
 			record.Decisions = nil
-			if reason != "" {
-				execLog = append(execLog, reason)
+			if preReason != "" {
+				execLog = append(execLog, preReason)
 			}
-			logger.Infof("📊 Backtest [%s] ⏭ %s", r.cfg.RunID, reason)
-		} else {
-			if reason != "" {
-				execLog = append(execLog, reason)
-				logger.Infof("📊 Backtest [%s] ✅ %s", r.cfg.RunID, reason)
+			logger.Infof("📊 Backtest [%s] ⏭ %s", r.cfg.RunID, preReason)
+		case preDecisionPositionsOnlyAI:
+			if preReason != "" {
+				execLog = append(execLog, preReason)
 			}
+			kernel.RestrictCandidatesToPositions(ctx)
+			posSymbols := make([]string, 0, len(ctx.Positions))
+			for _, pos := range ctx.Positions {
+				posSymbols = append(posSymbols, pos.Symbol)
+			}
+			scopeLine := fmt.Sprintf("pre-decision: AI limited to position symbols (%s)", strings.Join(posSymbols, ", "))
+			execLog = append(execLog, scopeLine)
+			logger.Infof("📊 Backtest [%s] 📌 %s", r.cfg.RunID, scopeLine)
+			fallthrough
+		case preDecisionFullAI:
+			if preOutcome == preDecisionFullAI && preReason != "" {
+				execLog = append(execLog, preReason)
+				logger.Infof("📊 Backtest [%s] ✅ %s", r.cfg.RunID, preReason)
+			}
+		}
 
+		if preOutcome != preDecisionSkipAI {
 		var (
 			fullDecision *kernel.FullDecision
 			fromCache    bool
@@ -182,7 +200,7 @@ func (r *Runner) stepOnce() error {
 				decisionActions = append(decisionActions, actionRecord)
 			}
 		}
-		} // end pre-decision else (AI path)
+		} // end AI path (not preDecisionSkipAI)
 	}
 
 	cycleForLog := state.DecisionCycle
@@ -226,6 +244,15 @@ func (r *Runner) stepOnce() error {
 	if record != nil {
 		record.Decisions = decisionActions
 		record.ExecutionLog = execLog
+		if !record.PreDecisionSkipped && len(record.CandidateCoins) > 0 {
+			failures := make(map[string]string)
+			for _, sym := range record.CandidateCoins {
+				if _, ok := marketData[sym]; !ok {
+					failures[sym] = "market data not available for this bar"
+				}
+			}
+			store.AppendMissingCandidateDecisions(record, record.CandidateCoins, failures)
+		}
 		record.Success = !hadError && liquidationNote == ""
 		if liquidationNote != "" {
 			record.ErrorMessage = liquidationNote
@@ -324,7 +351,7 @@ func (r *Runner) buildDecisionContext(ts int64, marketData map[string]*market.Da
 
 	runtime := int((ts - int64(r.cfg.StartTS*1000)) / 60000)
 	ctx := &kernel.Context{
-		CurrentTime:      time.UnixMilli(ts).UTC().Format("2006-01-02 15:04:05 UTC"),
+		CurrentTime:      kernel.FormatBeijingDateTime(time.UnixMilli(ts)),
 		ReferenceTimeMs:  ts,
 		RuntimeMinutes:   runtime,
 		CallCount:       callCount,

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { MetricTooltip } from '../common/MetricTooltip'
 import { t, type Language } from '../../i18n/translations'
+import { formatBeijingDateTime } from '../../utils/format'
 import { EquityChart } from './BacktestChartTab'
 import type {
   BacktestEquityPoint,
@@ -131,17 +132,9 @@ export function ProgressRing({ progress, size = 120 }: ProgressRingProps) {
 
 // ============ Positions Display ============
 
-function formatKlineBarTime(ms: number | undefined, language: Language): string {
+function formatKlineBarTime(ms: number | undefined, _language: Language): string {
   if (!ms || ms <= 0) return '—'
-  return new Date(ms).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  })
+  return formatBeijingDateTime(ms) ?? '—'
 }
 
 interface PositionsDisplayProps {

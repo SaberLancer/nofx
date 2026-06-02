@@ -107,10 +107,30 @@ func (pb *PositionBuilder) handleClose(
 	}
 
 	if position == nil {
-		// No open position found - just skip
-		// This can happen if trades are processed out of order or database was cleared
-		logger.Infof("  ⚠️  No matching open position for %s %s (orderID: %s), skipping", symbol, side, orderID)
-		return nil
+		// No OPEN row (missed open sync / DB reset): still persist a CLOSED row for UI history.
+		if quantity <= 0 || price <= 0 {
+			logger.Infof("  ⚠️  No matching open position for %s %s (orderID: %s), skipping", symbol, side, orderID)
+			return nil
+		}
+		if realizedPnL == 0 {
+			logger.Infof("  ⚠️  No matching open position for %s %s — recording close-only snapshot", symbol, side)
+		}
+		_, err := pb.positionStore.CreateFromClosedPnL(traderID, exchangeID, exchangeType, &ClosedPnLRecord{
+			Symbol:      symbol,
+			Side:        side,
+			EntryPrice:  price,
+			ExitPrice:   price,
+			Quantity:    quantity,
+			RealizedPnL: realizedPnL,
+			Fee:         fee,
+			Leverage:    1,
+			EntryTime:   tradeTimeMs,
+			ExitTime:    tradeTimeMs,
+			OrderID:     orderID,
+			CloseType:   "sync",
+			ExchangeID:  fmt.Sprintf("close_only_%s_%s_%d", symbol, side, tradeTimeMs),
+		})
+		return err
 	}
 
 	const QUANTITY_TOLERANCE = 0.0001

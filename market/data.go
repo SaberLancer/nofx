@@ -22,7 +22,12 @@ type FundingRateCache struct {
 var (
 	fundingRateMap sync.Map // map[string]*FundingRateCache
 	frCacheTTL     = 1 * time.Hour
+	beijingLoc     = time.FixedZone("Asia/Shanghai", 8*3600)
 )
+
+func formatBeijingKlineTimeMs(ms int64) string {
+	return time.UnixMilli(ms).In(beijingLoc).Format("01-02 15:04")
+}
 
 // Get retrieves market data for the specified token (uses Binance data by default)
 func Get(symbol string) (*Data, error) {
@@ -110,14 +115,14 @@ func GetWithExchange(symbol, exchange string) (*Data, error) {
 	}
 
 	// Get OI data
-	oiData, err := getOpenInterestData(symbol)
+	oiData, err := getOpenInterestData(symbol, exchange)
 	if err != nil {
 		// OI failure doesn't affect overall result, use default values
 		oiData = &OIData{Latest: 0, Average: 0}
 	}
 
 	// Get Funding Rate
-	fundingRate, _ := getFundingRate(symbol)
+	fundingRate, _ := getFundingRate(symbol, exchange)
 
 	// Calculate intraday series data
 	intradayData := calculateIntradaySeries(klines3m)
@@ -140,12 +145,11 @@ func GetWithExchange(symbol, exchange string) (*Data, error) {
 	}, nil
 }
 
-// GetWithTimeframes retrieves market data for specified multiple timeframes
-// timeframes: list of timeframes, e.g. ["5m", "15m", "1h", "4h"]
-// primaryTimeframe: primary timeframe (used for calculating current indicators), defaults to timeframes[0]
-// count: number of K-lines for each timeframe
-func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe string, count int) (*Data, error) {
+// GetWithTimeframes retrieves market data for specified multiple timeframes.
+// exchange selects the preferred kline source (e.g. "okx", "binance"); empty defaults to binance.
+func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe string, count int, exchange string) (*Data, error) {
 	symbol = Normalize(symbol)
+	exchange = NormalizeKlineExchange(exchange)
 
 	if len(timeframes) == 0 {
 		return nil, fmt.Errorf("at least one timeframe is required")
@@ -176,7 +180,11 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 	isXyzAsset := IsXyzDexAsset(symbol)
 
 	// Get K-line data for each timeframe
-	for _, tf := range timeframes {
+	for i, tf := range timeframes {
+		if i > 0 && !isXyzAsset {
+			time.Sleep(CoinAnkRequestSpacing)
+		}
+
 		var klines []Kline
 		var err error
 
@@ -189,7 +197,7 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 			}
 		} else {
 			// Use CoinAnk for regular crypto assets (default to Binance)
-			klines, err = getKlinesFromCoinAnk(symbol, tf, "binance", 200)
+			klines, err = getKlinesFromCoinAnk(symbol, tf, exchange, 200)
 			if err != nil {
 				logger.Infof("⚠️ Failed to get %s %s K-line from CoinAnk: %v", symbol, tf, err)
 				continue
@@ -233,13 +241,13 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 	priceChange4h := calculatePriceChangeByBars(primaryKlines, primaryTimeframe, 240) // 4 hours
 
 	// Get OI data
-	oiData, err := getOpenInterestData(symbol)
+	oiData, err := getOpenInterestData(symbol, exchange)
 	if err != nil {
 		oiData = &OIData{Latest: 0, Average: 0}
 	}
 
 	// Get Funding Rate
-	fundingRate, _ := getFundingRate(symbol)
+	fundingRate, _ := getFundingRate(symbol, exchange)
 
 	return &Data{
 		Symbol:        symbol,
@@ -255,8 +263,8 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 	}, nil
 }
 
-// getOpenInterestData retrieves OI data
-func getOpenInterestData(symbol string) (*OIData, error) {
+// getOpenInterestBinance retrieves OI data from Binance futures API.
+func getOpenInterestBinance(symbol string) (*OIData, error) {
 	url := fmt.Sprintf("https://fapi.binance.com/fapi/v1/openInterest?symbol=%s", symbol)
 
 	apiClient := NewAPIClient()
@@ -289,19 +297,8 @@ func getOpenInterestData(symbol string) (*OIData, error) {
 	}, nil
 }
 
-// getFundingRate retrieves funding rate (optimized: uses 1-hour cache)
-func getFundingRate(symbol string) (float64, error) {
-	// Check cache (1-hour validity)
-	// Funding Rate only updates every 8 hours, 1-hour cache is very reasonable
-	if cached, ok := fundingRateMap.Load(symbol); ok {
-		cache := cached.(*FundingRateCache)
-		if time.Since(cache.UpdatedAt) < frCacheTTL {
-			// Cache hit, return directly
-			return cache.Rate, nil
-		}
-	}
-
-	// Cache expired or doesn't exist, call API
+// getFundingRateBinance retrieves funding rate from Binance futures API.
+func getFundingRateBinance(symbol string) (float64, error) {
 	url := fmt.Sprintf("https://fapi.binance.com/fapi/v1/premiumIndex?symbol=%s", symbol)
 
 	apiClient := NewAPIClient()
@@ -331,13 +328,6 @@ func getFundingRate(symbol string) (float64, error) {
 	}
 
 	rate, _ := strconv.ParseFloat(result.LastFundingRate, 64)
-
-	// Update cache
-	fundingRateMap.Store(symbol, &FundingRateCache{
-		Rate:      rate,
-		UpdatedAt: time.Now(),
-	})
-
 	return rate, nil
 }
 
@@ -433,10 +423,9 @@ func Format(data *Data) string {
 func formatTimeframeData(sb *strings.Builder, data *TimeframeSeriesData) {
 	// Use OHLCV table format if kline data is available
 	if len(data.Klines) > 0 {
-		sb.WriteString("Time(UTC)      Open      High      Low       Close     Volume\n")
+		sb.WriteString("Time(Beijing)  Open      High      Low       Close     Volume\n")
 		for i, k := range data.Klines {
-			t := time.Unix(k.Time/1000, 0).UTC()
-			timeStr := t.Format("01-02 15:04")
+			timeStr := formatBeijingKlineTimeMs(k.Time)
 			marker := ""
 			if i == len(data.Klines)-1 {
 				marker = "  <- current"

@@ -13,15 +13,17 @@ import (
 // Prompt Building - System Prompt
 // ============================================================================
 
-// BuildSystemPrompt builds System Prompt according to strategy configuration
-func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string) string {
+// BuildSystemPrompt builds the static System Prompt (strategy + rules only).
+// Account-equity USDT caps live in the user prompt (## Current Session Limits) so consecutive
+// calls can share an identical system prefix for provider prompt-cache hits.
+func (e *StrategyEngine) BuildSystemPrompt(variant string) string {
 	var sb strings.Builder
 	riskControl := e.config.RiskControl
 	promptSections := e.config.PromptSections
 
 	// 0. Data Dictionary & Schema (ensure AI understands all fields)
 	lang := e.GetLanguage()
-	schemaPrompt := GetSchemaPrompt(lang)
+	schemaPrompt := GetSchemaPromptForIndicators(lang, &e.config.Indicators)
 	sb.WriteString(schemaPrompt)
 	sb.WriteString("\n\n")
 	sb.WriteString("---\n\n")
@@ -38,41 +40,60 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	// 2. Trading mode variant
 	switch strings.ToLower(strings.TrimSpace(variant)) {
 	case "aggressive":
-		sb.WriteString("## Mode: Aggressive\n- Prioritize capturing trend breakouts, can build positions in batches when confidence ≥ 70\n- Allow higher positions, but must strictly set stop-loss and explain risk-reward ratio\n\n")
+		if riskControl.EffectiveEnableStopLoss() || riskControl.EffectiveEnableTakeProfit() {
+			sb.WriteString("## Mode: Aggressive\n- Prioritize capturing trend breakouts, can build positions in batches when confidence ≥ 70\n- Allow higher positions, but must strictly set stop-loss and explain risk-reward ratio\n\n")
+		} else {
+			sb.WriteString("## Mode: Aggressive\n- Prioritize capturing trend breakouts, can build positions in batches when confidence ≥ 70\n- Allow higher positions; stop-loss/take-profit are disabled in this strategy — do not require SL/TP on open\n\n")
+		}
 	case "conservative":
-		sb.WriteString("## Mode: Conservative\n- Only open positions when multiple signals resonate\n- Prioritize cash preservation, must pause for multiple periods after consecutive losses\n\n")
+		sb.WriteString("## Mode: Conservative\n- Only open when enabled data sources in this strategy align; do not cite disabled indicators\n- Prioritize cash preservation, must pause for multiple periods after consecutive losses\n\n")
 	case "scalping":
 		sb.WriteString("## Mode: Scalping\n- Focus on short-term momentum, smaller profit targets but require quick action\n- If price doesn't move as expected within two bars, immediately reduce position or stop-loss\n\n")
 	}
 
-	// 3. Hard constraints (risk control)
-	btcEthPosValueRatio := riskControl.BTCETHMaxPositionValueRatio
-	if btcEthPosValueRatio <= 0 {
-		btcEthPosValueRatio = 5.0
-	}
-	altcoinPosValueRatio := riskControl.AltcoinMaxPositionValueRatio
-	if altcoinPosValueRatio <= 0 {
-		altcoinPosValueRatio = 1.0
-	}
+	// 3. Hard constraints (risk control) — ratios only; per-cycle USDT caps in user prompt
+	btcEthPosValueRatio := positionValueRatioBTCETH(riskControl)
+	altcoinPosValueRatio := positionValueRatioAltcoin(riskControl)
 
 	sb.WriteString("# Hard Constraints (Risk Control)\n\n")
 	sb.WriteString("## CODE ENFORCED (Backend validation, cannot be bypassed):\n")
-	sb.WriteString(fmt.Sprintf("- Max Positions: %d coins simultaneously\n", riskControl.MaxPositions))
-	sb.WriteString(fmt.Sprintf("- Position Value Limit (Altcoins): max %.0f USDT (= equity %.0f × %.1fx)\n",
-		accountEquity*altcoinPosValueRatio, accountEquity, altcoinPosValueRatio))
-	sb.WriteString(fmt.Sprintf("- Position Value Limit (BTC/ETH): max %.0f USDT (= equity %.0f × %.1fx)\n",
-		accountEquity*btcEthPosValueRatio, accountEquity, btcEthPosValueRatio))
+	sb.WriteString(fmt.Sprintf("- Max Positions: %d coins simultaneously\n", e.config.EffectiveMaxPositions()))
+	if lang == LangChinese {
+		sb.WriteString(fmt.Sprintf("- 仓位名义上限（山寨）: 净值 × %.1fx — **本周期 USDT 上限见用户消息「## 本周期仓位上限」**\n", altcoinPosValueRatio))
+		sb.WriteString(fmt.Sprintf("- 仓位名义上限（BTC/ETH）: 净值 × %.1fx — **本周期 USDT 上限见用户消息「## 本周期仓位上限」**\n", btcEthPosValueRatio))
+	} else {
+		sb.WriteString(fmt.Sprintf("- Position value cap (Altcoins): equity × %.1fx — **exact max USDT in user message \"## Current Session Limits\"**\n", altcoinPosValueRatio))
+		sb.WriteString(fmt.Sprintf("- Position value cap (BTC/ETH): equity × %.1fx — **exact max USDT in user message \"## Current Session Limits\"**\n", btcEthPosValueRatio))
+	}
 	sb.WriteString(fmt.Sprintf("- Max Margin Usage: ≤%.0f%%\n", riskControl.MaxMarginUsage*100))
 	sb.WriteString(fmt.Sprintf("- Min Position Size: ≥%.0f USDT\n\n", riskControl.MinPositionSize))
-	sb.WriteString("## CODE ENFORCED (Open protection — stop_loss / take_profit):\n")
-	sb.WriteString(fmt.Sprintf("- BTC/ETH min stop distance: ≥%.2f%% | Altcoins: ≥%.2f%% (underlying price move)\n",
-		riskControl.EffectiveBtcEthMinStopLossDistPct(), riskControl.EffectiveAltcoinMinStopLossDistPct()))
-	sb.WriteString(fmt.Sprintf("- Min risk-reward on open: ≥1:%.1f\n\n", riskControl.MinRiskRewardRatio))
+
+	slEnabled := riskControl.EffectiveEnableStopLoss()
+	tpEnabled := riskControl.EffectiveEnableTakeProfit()
+	if slEnabled || tpEnabled {
+		sb.WriteString("## CODE ENFORCED (Open protection — stop_loss / take_profit):\n")
+		if slEnabled {
+			sb.WriteString(fmt.Sprintf("- BTC/ETH min stop distance: ≥%.2f%% | Altcoins: ≥%.2f%% (underlying price move)\n",
+				riskControl.EffectiveBtcEthMinStopLossDistPct(), riskControl.EffectiveAltcoinMinStopLossDistPct()))
+		}
+		if slEnabled && tpEnabled {
+			sb.WriteString(fmt.Sprintf("- Min risk-reward on open: ≥1:%.1f\n", riskControl.MinRiskRewardRatio))
+		}
+		sb.WriteString("\n")
+	} else if lang == LangChinese {
+		sb.WriteString("## 止损止盈（策略已关闭，后端不校验）\n")
+		sb.WriteString("- 开仓勿填 `stop_loss` / `take_profit`；勿因最小止损价距或盈亏比不足而 `wait`。\n\n")
+	} else {
+		sb.WriteString("## Stop-Loss / Take-Profit (disabled — not validated on open)\n")
+		sb.WriteString("- Omit `stop_loss` / `take_profit` on open; do not `wait` due to min SL distance or R:R.\n\n")
+	}
 
 	sb.WriteString("## AI GUIDED (Recommended, you should follow):\n")
 	sb.WriteString(fmt.Sprintf("- Trading Leverage: Altcoins max %dx | BTC/ETH max %dx\n",
 		riskControl.AltcoinMaxLeverage, riskControl.BTCETHMaxLeverage))
-	sb.WriteString(fmt.Sprintf("- Risk-Reward Ratio: ≥1:%.1f (take_profit / stop_loss)\n", riskControl.MinRiskRewardRatio))
+	if slEnabled && tpEnabled {
+		sb.WriteString(fmt.Sprintf("- Risk-Reward Ratio: ≥1:%.1f (take_profit / stop_loss)\n", riskControl.MinRiskRewardRatio))
+	}
 	sb.WriteString(fmt.Sprintf("- Min Confidence: ≥%d to open position\n\n", riskControl.MinConfidence))
 
 	primaryTF := e.config.Indicators.Klines.PrimaryTimeframe
@@ -81,15 +102,13 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 
 	AppendConfiguredPnLThresholds(&sb, riskControl, lang)
 
-	// Position sizing guidance
+	// Position sizing guidance (USDT caps are per-cycle in user prompt)
 	sb.WriteString("## Position Sizing Guidance\n")
-	sb.WriteString("Calculate `position_size_usd` based on your confidence and the Position Value Limits above:\n")
-	sb.WriteString("- High confidence (≥85): Use 80-100%% of max position value limit\n")
-	sb.WriteString("- Medium confidence (70-84): Use 50-80%% of max position value limit\n")
-	sb.WriteString("- Low confidence (60-69): Use 30-50%% of max position value limit\n")
-	sb.WriteString(fmt.Sprintf("- Example: With equity %.0f and BTC/ETH ratio %.1fx, max is %.0f USDT\n",
-		accountEquity, btcEthPosValueRatio, accountEquity*btcEthPosValueRatio))
-	sb.WriteString("- **DO NOT** just use available_balance as position_size_usd. Use the Position Value Limits!\n\n")
+	sb.WriteString("Calculate `position_size_usd` from your confidence and the **USDT caps** in user message \"## Current Session Limits\" / \"## 本周期仓位上限\":\n")
+	sb.WriteString("- High confidence (≥85): Use 80-100%% of the applicable max position value (USDT)\n")
+	sb.WriteString("- Medium confidence (70-84): Use 50-80%% of the applicable max position value (USDT)\n")
+	sb.WriteString("- Low confidence (60-69): Use 30-50%% of the applicable max position value (USDT)\n")
+	sb.WriteString("- **DO NOT** use available_balance as position_size_usd; use the session USDT caps for that symbol type (BTC/ETH vs altcoin)\n\n")
 
 	// 4. Trading frequency (editable)
 	if promptSections.TradingFrequency != "" {
@@ -103,18 +122,8 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 		sb.WriteString("If you find yourself trading every period → standards too low; if closing positions < 30 minutes → too impatient.\n\n")
 	}
 
-	// 5. Entry standards (editable)
-	if promptSections.EntryStandards != "" {
-		sb.WriteString(promptSections.EntryStandards)
-		sb.WriteString("\n\nYou have the following indicator data:\n")
-		e.writeAvailableIndicators(&sb)
-		sb.WriteString(fmt.Sprintf("\n**Confidence ≥ %d** required to open positions.\n\n", riskControl.MinConfidence))
-	} else {
-		sb.WriteString("# 🎯 Entry Standards (Strict)\n\n")
-		sb.WriteString("Only open positions when multiple signals resonate. You have:\n")
-		e.writeAvailableIndicators(&sb)
-		sb.WriteString(fmt.Sprintf("\nFeel free to use any effective analysis method, but **confidence ≥ %d** required to open positions; avoid low-quality behaviors such as single indicators, contradictory signals, sideways consolidation, reopening immediately after closing, etc.\n\n", riskControl.MinConfidence))
-	}
+	// 5. Entry standards — indicator list is always generated from strategy config
+	e.appendConfiguredEntryStandards(&sb, lang, riskControl.MinConfidence)
 
 	// 6. Reduce standards (editable)
 	if promptSections.ReduceStandards != "" {
@@ -179,13 +188,15 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 		sb.WriteString("在 `<reasoning>` 中分析**已有持仓**的盈亏时：\n")
 		sb.WriteString("- **必须**使用「## Current Positions」每行的 **Margin PnL%**，以及下方「思维链必须引用的持仓 PnL%」中的数值（相对保证金、已含杠杆）。\n")
 		sb.WriteString("- **禁止**把标的价格涨跌幅 (Current−Entry)/Entry 写成「未实现盈亏」；二者常相差约杠杆倍数（如 5x 时 PnL% ≈ 价格变动% × 5）。\n")
-		sb.WriteString("- 若需提及标的价格变动，必须单独写「标的价格变动约 +x.xx%」，并标明**不是** Margin PnL%。\n\n")
+		sb.WriteString("- 若需提及标的价格变动，必须单独写「标的价格变动约 +x.xx%」，并标明**不是** Margin PnL%。\n")
+		sb.WriteString("- K 线表时间为**北京时间（UTC+8）**；思维链描述行情时刻也必须使用**北京时间**，并以标记 `<- current` 的最新 K 线为准。\n\n")
 	} else {
 		sb.WriteString("# Chain-of-Thought: Position P&L (Mandatory)\n\n")
 		sb.WriteString("When analyzing **existing positions** inside `<reasoning>`:\n")
 		sb.WriteString("- You **MUST** use **Margin PnL%** on each `## Current Positions` line and in `## Mandatory PnL% for <reasoning>` (return on margin, leverage included).\n")
 		sb.WriteString("- You **MUST NOT** report raw `(Current − Entry) / Entry` as \"unrealized PnL\"; with 5x leverage, Margin PnL% is often ~5× the price-change %.\n")
-		sb.WriteString("- If you mention underlying price movement, label it separately (e.g. \"underlying price change ~+x.xx%\") and state it is **not** Margin PnL%.\n\n")
+		sb.WriteString("- If you mention underlying price movement, label it separately and state it is **not** Margin PnL%.\n")
+		sb.WriteString("- K-line tables use **Beijing Time (UTC+8)**; cite bar times in Beijing time and use the bar marked `<- current` as live price action.\n\n")
 	}
 
 	// 9. Output format
@@ -199,10 +210,20 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("<decision>\n")
 	sb.WriteString("Step 2: JSON decision array\n\n")
 	sb.WriteString("```json\n[\n")
-	// Use the actual configured position value ratio for BTC/ETH in the example
-	examplePositionSize := accountEquity * btcEthPosValueRatio
-	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300},\n",
-		riskControl.BTCETHMaxLeverage, examplePositionSize))
+	// Illustrative numbers only (not account-specific) to keep system prompt byte-stable
+	if slEnabled && tpEnabled {
+		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": 50000, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300},\n",
+			riskControl.BTCETHMaxLeverage))
+	} else if slEnabled {
+		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": 50000, \"stop_loss\": 97000, \"confidence\": 85, \"risk_usd\": 300},\n",
+			riskControl.BTCETHMaxLeverage))
+	} else if tpEnabled {
+		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": 50000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300},\n",
+			riskControl.BTCETHMaxLeverage))
+	} else {
+		sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": 50000, \"confidence\": 85, \"risk_usd\": 300},\n",
+			riskControl.BTCETHMaxLeverage))
+	}
 	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\", \"close_ratio\": 0.5}\n")
 	sb.WriteString("]\n```\n")
 	sb.WriteString("</decision>\n\n")
@@ -210,7 +231,7 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | hold | wait\n")
 	sb.WriteString("- Optional for closing: `close_ratio` (0-1). If omitted or ≥1, close all.\n")
 	sb.WriteString(fmt.Sprintf("- `confidence`: 0-100 (opening recommended ≥ %d)\n", riskControl.MinConfidence))
-	sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
+	sb.WriteString(openRequiredFieldsDescription(slEnabled, tpEnabled, lang))
 	sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")
 
 	// 8. Custom Prompt
@@ -224,71 +245,73 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	return sb.String()
 }
 
-func (e *StrategyEngine) writeAvailableIndicators(sb *strings.Builder) {
-	indicators := e.config.Indicators
-	kline := indicators.Klines
+func positionValueRatioBTCETH(riskControl store.RiskControlConfig) float64 {
+	r := riskControl.BTCETHMaxPositionValueRatio
+	if r <= 0 {
+		return 5.0
+	}
+	return r
+}
 
-	sb.WriteString(fmt.Sprintf("- %s price series", kline.PrimaryTimeframe))
-	if kline.EnableMultiTimeframe {
-		sb.WriteString(fmt.Sprintf(" + %s K-line series\n", kline.LongerTimeframe))
+func positionValueRatioAltcoin(riskControl store.RiskControlConfig) float64 {
+	r := riskControl.AltcoinMaxPositionValueRatio
+	if r <= 0 {
+		return 1.0
+	}
+	return r
+}
+
+// appendCurrentSessionLimits writes per-cycle equity-based USDT caps (user prompt; dynamic).
+func (e *StrategyEngine) appendCurrentSessionLimits(sb *strings.Builder, accountEquity float64) {
+	if accountEquity <= 0 {
+		return
+	}
+	riskControl := e.config.RiskControl
+	btcRatio := positionValueRatioBTCETH(riskControl)
+	altRatio := positionValueRatioAltcoin(riskControl)
+	btcMax := accountEquity * btcRatio
+	altMax := accountEquity * altRatio
+	lang := e.GetLanguage()
+
+	if lang == LangChinese {
+		sb.WriteString("## 本周期仓位上限（开仓 position_size_usd 必须 ≤ 对应上限）\n\n")
+		sb.WriteString(fmt.Sprintf("- 账户净值: %.2f USDT\n", accountEquity))
+		sb.WriteString(fmt.Sprintf("- 山寨币名义上限: %.0f USDT (= 净值 × %.1fx)\n", altMax, altRatio))
+		sb.WriteString(fmt.Sprintf("- BTC/ETH 名义上限: %.0f USDT (= 净值 × %.1fx)\n", btcMax, btcRatio))
+		sb.WriteString(fmt.Sprintf("- 高信心(≥85) BTC/ETH 参考: 约 %.0f–%.0f USDT\n\n", btcMax*0.8, btcMax))
 	} else {
-		sb.WriteString("\n")
+		sb.WriteString("## Current Session Limits (position_size_usd must not exceed the cap for that symbol type)\n\n")
+		sb.WriteString(fmt.Sprintf("- Account equity: %.2f USDT\n", accountEquity))
+		sb.WriteString(fmt.Sprintf("- Altcoin max position value: %.0f USDT (= equity × %.1fx)\n", altMax, altRatio))
+		sb.WriteString(fmt.Sprintf("- BTC/ETH max position value: %.0f USDT (= equity × %.1fx)\n", btcMax, btcRatio))
+		sb.WriteString(fmt.Sprintf("- High confidence (≥85) BTC/ETH reference: ~%.0f–%.0f USDT\n\n", btcMax*0.8, btcMax))
 	}
+}
 
-	if indicators.EnableEMA {
-		sb.WriteString("- EMA indicators")
-		if len(indicators.EMAPeriods) > 0 {
-			sb.WriteString(fmt.Sprintf(" (periods: %v)", indicators.EMAPeriods))
+func openRequiredFieldsDescription(slEnabled, tpEnabled bool, lang Language) string {
+	baseZH := "- 开仓必填：leverage、position_size_usd、confidence、risk_usd"
+	baseEN := "- Required when opening: leverage, position_size_usd, confidence, risk_usd"
+	switch {
+	case slEnabled && tpEnabled:
+		if lang == LangChinese {
+			return baseZH + "、stop_loss、take_profit\n"
 		}
-		sb.WriteString("\n")
-	}
-
-	if indicators.EnableMACD {
-		sb.WriteString("- MACD indicators\n")
-	}
-
-	if indicators.EnableRSI {
-		sb.WriteString("- RSI indicators")
-		if len(indicators.RSIPeriods) > 0 {
-			sb.WriteString(fmt.Sprintf(" (periods: %v)", indicators.RSIPeriods))
+		return baseEN + ", stop_loss, take_profit\n"
+	case slEnabled:
+		if lang == LangChinese {
+			return baseZH + "、stop_loss（勿填 take_profit）\n"
 		}
-		sb.WriteString("\n")
-	}
-
-	if indicators.EnableATR {
-		sb.WriteString("- ATR indicators")
-		if len(indicators.ATRPeriods) > 0 {
-			sb.WriteString(fmt.Sprintf(" (periods: %v)", indicators.ATRPeriods))
+		return baseEN + ", stop_loss (omit take_profit)\n"
+	case tpEnabled:
+		if lang == LangChinese {
+			return baseZH + "、take_profit（勿填 stop_loss）\n"
 		}
-		sb.WriteString("\n")
-	}
-
-	if indicators.EnableBOLL {
-		sb.WriteString("- Bollinger Bands (BOLL) - Upper/Middle/Lower bands")
-		if len(indicators.BOLLPeriods) > 0 {
-			sb.WriteString(fmt.Sprintf(" (periods: %v)", indicators.BOLLPeriods))
+		return baseEN + ", take_profit (omit stop_loss)\n"
+	default:
+		if lang == LangChinese {
+			return baseZH + "（**勿**填 stop_loss / take_profit）\n"
 		}
-		sb.WriteString("\n")
-	}
-
-	if indicators.EnableVolume {
-		sb.WriteString("- Volume data\n")
-	}
-
-	if indicators.EnableOI {
-		sb.WriteString("- Open Interest (OI) data\n")
-	}
-
-	if indicators.EnableFundingRate {
-		sb.WriteString("- Funding rate\n")
-	}
-
-	if len(e.config.CoinSource.StaticCoins) > 0 || e.config.CoinSource.UseAI500 || e.config.CoinSource.UseOITop {
-		sb.WriteString("- AI500 / OI_Top filter tags (if available)\n")
-	}
-
-	if indicators.EnableQuantData {
-		sb.WriteString("- Quantitative data (institutional/retail fund flow, position changes, multi-period price changes)\n")
+		return baseEN + " (do **not** include stop_loss or take_profit)\n"
 	}
 }
 
@@ -300,15 +323,17 @@ func (e *StrategyEngine) writeAvailableIndicators(sb *strings.Builder) {
 func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 	var sb strings.Builder
 
-	// System status
-	sb.WriteString(fmt.Sprintf("Time: %s | Period: #%d | Runtime: %d minutes\n\n",
-		ctx.CurrentTime, ctx.CallCount, ctx.RuntimeMinutes))
+	// System status (Beijing time — matches K-line tables and AI reasoning)
+	refTime := DecisionReferenceTime(ctx)
+	sb.WriteString(FormatDecisionContextTimeLine(refTime, e.GetLanguage(), ctx.CallCount, ctx.RuntimeMinutes))
+	sb.WriteString("\n\n")
 
-	// BTC market
+	// Per-cycle limits (dynamic) — immediately after time line, before market data
+	e.appendCurrentSessionLimits(&sb, ctx.Account.TotalEquity)
+
+	// BTC market (only show indicators enabled in strategy config)
 	if btcData, hasBTC := ctx.MarketDataMap["BTCUSDT"]; hasBTC {
-		sb.WriteString(fmt.Sprintf("BTC: %.2f (1h: %+.2f%%, 4h: %+.2f%%) | MACD: %.4f | RSI: %.2f\n\n",
-			btcData.CurrentPrice, btcData.PriceChange1h, btcData.PriceChange4h,
-			btcData.CurrentMACD, btcData.CurrentRSI7))
+		sb.WriteString(e.formatBTCMarketSnapshot(btcData))
 	}
 
 	// Account information
@@ -690,10 +715,9 @@ func (e *StrategyEngine) formatMarketData(data *market.Data) string {
 
 func (e *StrategyEngine) formatTimeframeSeriesData(sb *strings.Builder, data *market.TimeframeSeriesData, indicators store.IndicatorConfig) {
 	if len(data.Klines) > 0 {
-		sb.WriteString("Time(UTC)      Open      High      Low       Close     Volume\n")
+		sb.WriteString("Time(Beijing)   Open      High      Low       Close     Volume\n")
 		for i, k := range data.Klines {
-			t := time.Unix(k.Time/1000, 0).UTC()
-			timeStr := t.Format("01-02 15:04")
+			timeStr := FormatBeijingKlineTimeMs(k.Time)
 			marker := ""
 			if i == len(data.Klines)-1 {
 				marker = "  <- current"

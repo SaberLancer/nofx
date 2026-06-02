@@ -1,5 +1,10 @@
 package kernel
 
+import (
+	"nofx/store"
+	"sort"
+)
+
 // ============================================================================
 // Trading Data Schema
 // ============================================================================
@@ -442,90 +447,140 @@ var CommonMistakes = []CommonMistake{
 
 // ========== Prompt Generation Functions ==========
 
-// GetSchemaPrompt generates schema description text for AI prompts
+// GetSchemaPrompt generates schema description text for AI prompts (all market fields).
 func GetSchemaPrompt(lang Language) string {
+	return GetSchemaPromptForIndicators(lang, nil)
+}
+
+// GetSchemaPromptForIndicators builds schema text; only includes market/OI sections enabled in config.
+// ind==nil keeps legacy behavior (all market dictionary fields + OI interpretation).
+func GetSchemaPromptForIndicators(lang Language, ind *store.IndicatorConfig) string {
 	if lang == LangChinese {
-		return getSchemaPromptZH()
+		return getSchemaPromptZH(ind)
 	}
-	return getSchemaPromptEN()
+	return getSchemaPromptEN(ind)
+}
+
+func schemaIncludeOI(ind *store.IndicatorConfig) bool {
+	if ind == nil {
+		return true
+	}
+	return ind.EnableOI || ind.EnableQuantOI
+}
+
+func schemaIncludeVolume(ind *store.IndicatorConfig) bool {
+	if ind == nil {
+		return true
+	}
+	return ind.EnableVolume
 }
 
 // getSchemaPromptZH generates the Chinese prompt
-func getSchemaPromptZH() string {
+func getSchemaPromptZH(ind *store.IndicatorConfig) string {
 	prompt := "# 📖 数据字典与交易规则\n\n"
 	prompt += "## 📊 字段含义说明\n\n"
 
 	// Account metrics
 	prompt += "### 账户指标\n"
-	for key, field := range DataDictionary["AccountMetrics"] {
-		prompt += formatFieldDefZH(key, field)
+	for _, key := range sortedDictionaryKeys(DataDictionary["AccountMetrics"]) {
+		prompt += formatFieldDefZH(key, DataDictionary["AccountMetrics"][key])
 	}
 
 	// Trade metrics
 	prompt += "\n### 交易指标\n"
-	for key, field := range DataDictionary["TradeMetrics"] {
-		prompt += formatFieldDefZH(key, field)
+	for _, key := range sortedDictionaryKeys(DataDictionary["TradeMetrics"]) {
+		prompt += formatFieldDefZH(key, DataDictionary["TradeMetrics"][key])
 	}
 
 	// Position metrics
 	prompt += "\n### 持仓指标\n"
-	for key, field := range DataDictionary["PositionMetrics"] {
-		prompt += formatFieldDefZH(key, field)
+	for _, key := range sortedDictionaryKeys(DataDictionary["PositionMetrics"]) {
+		prompt += formatFieldDefZH(key, DataDictionary["PositionMetrics"][key])
 	}
 
-	// Market data
-	prompt += "\n### 市场数据\n"
-	for key, field := range DataDictionary["MarketData"] {
-		prompt += formatFieldDefZH(key, field)
+	// Market data (filtered by strategy indicators when ind != nil)
+	if schemaIncludeVolume(ind) || schemaIncludeOI(ind) {
+		prompt += "\n### 市场数据\n"
+		for _, key := range sortedDictionaryKeys(DataDictionary["MarketData"]) {
+			if key == "Volume" && !schemaIncludeVolume(ind) {
+				continue
+			}
+			if (key == "OI" || key == "OIChange") && !schemaIncludeOI(ind) {
+				continue
+			}
+			prompt += formatFieldDefZH(key, DataDictionary["MarketData"][key])
+		}
 	}
 
-	// OI interpretation
-	prompt += "\n## 💹 持仓量(OI)变化解读\n\n"
-	prompt += "- **OI增加 + 价格上涨**: " + OIInterpretation.OIUp_PriceUp.ZH + "\n"
-	prompt += "- **OI增加 + 价格下跌**: " + OIInterpretation.OIUp_PriceDown.ZH + "\n"
-	prompt += "- **OI减少 + 价格上涨**: " + OIInterpretation.OIDown_PriceUp.ZH + "\n"
-	prompt += "- **OI减少 + 价格下跌**: " + OIInterpretation.OIDown_PriceDown.ZH + "\n"
+	if schemaIncludeOI(ind) {
+		prompt += "\n## 💹 持仓量(OI)变化解读\n\n"
+		prompt += "- **OI增加 + 价格上涨**: " + OIInterpretation.OIUp_PriceUp.ZH + "\n"
+		prompt += "- **OI增加 + 价格下跌**: " + OIInterpretation.OIUp_PriceDown.ZH + "\n"
+		prompt += "- **OI减少 + 价格上涨**: " + OIInterpretation.OIDown_PriceUp.ZH + "\n"
+		prompt += "- **OI减少 + 价格下跌**: " + OIInterpretation.OIDown_PriceDown.ZH + "\n"
+	}
 
 	return prompt
 }
 
 // getSchemaPromptEN generates the English prompt
-func getSchemaPromptEN() string {
+func getSchemaPromptEN(ind *store.IndicatorConfig) string {
 	prompt := "# 📖 Data Dictionary & Trading Rules\n\n"
 	prompt += "## 📊 Field Definitions\n\n"
 
 	// Account Metrics
 	prompt += "### Account Metrics\n"
-	for key, field := range DataDictionary["AccountMetrics"] {
-		prompt += formatFieldDefEN(key, field)
+	for _, key := range sortedDictionaryKeys(DataDictionary["AccountMetrics"]) {
+		prompt += formatFieldDefEN(key, DataDictionary["AccountMetrics"][key])
 	}
 
 	// Trade Metrics
 	prompt += "\n### Trade Metrics\n"
-	for key, field := range DataDictionary["TradeMetrics"] {
-		prompt += formatFieldDefEN(key, field)
+	for _, key := range sortedDictionaryKeys(DataDictionary["TradeMetrics"]) {
+		prompt += formatFieldDefEN(key, DataDictionary["TradeMetrics"][key])
 	}
 
 	// Position Metrics
 	prompt += "\n### Position Metrics\n"
-	for key, field := range DataDictionary["PositionMetrics"] {
-		prompt += formatFieldDefEN(key, field)
+	for _, key := range sortedDictionaryKeys(DataDictionary["PositionMetrics"]) {
+		prompt += formatFieldDefEN(key, DataDictionary["PositionMetrics"][key])
 	}
 
-	// Market Data
-	prompt += "\n### Market Data\n"
-	for key, field := range DataDictionary["MarketData"] {
-		prompt += formatFieldDefEN(key, field)
+	if schemaIncludeVolume(ind) || schemaIncludeOI(ind) {
+		prompt += "\n### Market Data\n"
+		for _, key := range sortedDictionaryKeys(DataDictionary["MarketData"]) {
+			if key == "Volume" && !schemaIncludeVolume(ind) {
+				continue
+			}
+			if (key == "OI" || key == "OIChange") && !schemaIncludeOI(ind) {
+				continue
+			}
+			prompt += formatFieldDefEN(key, DataDictionary["MarketData"][key])
+		}
 	}
 
-	// OI Interpretation
-	prompt += "\n## 💹 Open Interest (OI) Change Interpretation\n\n"
-	prompt += "- **OI Up + Price Up**: " + OIInterpretation.OIUp_PriceUp.EN + "\n"
-	prompt += "- **OI Up + Price Down**: " + OIInterpretation.OIUp_PriceDown.EN + "\n"
-	prompt += "- **OI Down + Price Up**: " + OIInterpretation.OIDown_PriceUp.EN + "\n"
-	prompt += "- **OI Down + Price Down**: " + OIInterpretation.OIDown_PriceDown.EN + "\n"
+	if schemaIncludeOI(ind) {
+		prompt += "\n## 💹 Open Interest (OI) Change Interpretation\n\n"
+		prompt += "- **OI Up + Price Up**: " + OIInterpretation.OIUp_PriceUp.EN + "\n"
+		prompt += "- **OI Up + Price Down**: " + OIInterpretation.OIUp_PriceDown.EN + "\n"
+		prompt += "- **OI Down + Price Up**: " + OIInterpretation.OIDown_PriceUp.EN + "\n"
+		prompt += "- **OI Down + Price Down**: " + OIInterpretation.OIDown_PriceDown.EN + "\n"
+	}
 
 	return prompt
+}
+
+// sortedDictionaryKeys returns map keys in stable order (required for byte-identical system prompts / API prefix cache).
+func sortedDictionaryKeys(m map[string]BilingualFieldDef) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // formatFieldDefZH formats a field definition in Chinese

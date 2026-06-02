@@ -3,6 +3,8 @@ import type {
   Exchange,
   ExchangeAccountStateResponse,
   UpdateModelConfigRequest,
+  CreateModelConfigRequest,
+  CreateModelConfigResponse,
   UpdateExchangeConfigRequest,
   CreateExchangeRequest,
   BeginnerOnboardingResponse,
@@ -33,6 +35,48 @@ export const configApi = {
       return data.templates.map((item: { name: string }) => item.name)
     }
     return []
+  },
+
+  async createModelConfig(
+    request: CreateModelConfigRequest
+  ): Promise<CreateModelConfigResponse> {
+    const config = await CryptoService.fetchCryptoConfig()
+
+    if (!config.transport_encryption) {
+      const result = await httpClient.post<CreateModelConfigResponse>(
+        `${API_BASE}/models`,
+        request
+      )
+      if (!result.success || !result.data) {
+        throw new Error(result.message || 'Failed to create model config')
+      }
+      return result.data
+    }
+
+    const publicKey = await CryptoService.fetchPublicKey()
+    await CryptoService.initialize(publicKey)
+    const userId = localStorage.getItem('user_id') || ''
+    const sessionId = sessionStorage.getItem('session_id') || ''
+    const encryptedPayload = await CryptoService.encryptSensitiveData(
+      JSON.stringify(request),
+      userId,
+      sessionId
+    )
+    const result = await httpClient.post<CreateModelConfigResponse>(
+      `${API_BASE}/models`,
+      encryptedPayload
+    )
+    if (!result.success || !result.data) {
+      throw new Error(result.message || 'Failed to create model config')
+    }
+    return result.data
+  },
+
+  async deleteModelConfig(modelId: string): Promise<void> {
+    const result = await httpClient.delete(`${API_BASE}/models/${encodeURIComponent(modelId)}`)
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to delete model config')
+    }
   },
 
   async updateModelConfigs(request: UpdateModelConfigRequest): Promise<void> {

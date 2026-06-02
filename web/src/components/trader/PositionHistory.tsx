@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import useSWR from 'swr'
 import { Brain } from 'lucide-react'
 import { api } from '../../lib/api'
 import {
@@ -12,6 +13,7 @@ import { MetricTooltip } from '../common/MetricTooltip'
 import { formatPrice, formatQuantity } from '../../utils/format'
 import { NofxSelect } from '../ui/select'
 import { DecisionDetailModal } from './DecisionDetailModal'
+import { calcCloseROIPct } from './utils'
 import type {
   DecisionRecord,
   HistoricalPosition,
@@ -22,6 +24,13 @@ import type {
 
 interface PositionHistoryProps {
   traderId: string
+  /** When open positions decrease, history refetches immediately (position closed). */
+  openPositionCount?: number
+}
+
+/** SWR cache key — use with globalMutate after manual close. */
+export function positionHistorySWRKey(traderId: string) {
+  return `position-history-${traderId}`
 }
 
 // Format number with proper decimals (for large numbers)
@@ -43,17 +52,11 @@ function formatDuration(minutes: number): string {
   return `${(minutes / 1440).toFixed(1)}d`
 }
 
-// Format date
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  if (isNaN(date.getTime())) return '-'
-  return date.toLocaleDateString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+import { formatBeijingDateTime } from '../../utils/format'
+
+// Format date (API may return RFC3339 string or Unix ms number) — always Beijing time
+function formatDate(dateVal: string | number | undefined): string {
+  return formatBeijingDateTime(dateVal) ?? '-'
 }
 
 // Stats Card Component with formula tooltip
@@ -261,17 +264,9 @@ function PositionRow({
   const exitTime = position.exit_time ? new Date(position.exit_time).getTime() : 0
   const holdingMinutes = entryTime && exitTime && exitTime > entryTime ? (exitTime - entryTime) / 60000 : 0
 
-  // Calculate PnL percentage based on entry price
   const entryPrice = position.entry_price || 0
   const exitPrice = position.exit_price || 0
-  let pnlPct = 0
-  if (entryPrice > 0) {
-    if (isLong) {
-      pnlPct = ((exitPrice - entryPrice) / entryPrice) * 100
-    } else {
-      pnlPct = ((entryPrice - exitPrice) / entryPrice) * 100
-    }
-  }
+  const pnlPct = calcCloseROIPct(position)
 
   // Use entry_quantity for display (original position size)
   const displayQty = position.entry_quantity || position.quantity || 0
@@ -378,14 +373,13 @@ function PositionRow({
   )
 }
 
-export function PositionHistory({ traderId }: PositionHistoryProps) {
+export function PositionHistory({ traderId, openPositionCount }: PositionHistoryProps) {
   const { language } = useLanguage()
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [positions, setPositions] = useState<HistoricalPosition[]>([])
   const [stats, setStats] = useState<TraderStats | null>(null)
   const [symbolStats, setSymbolStats] = useState<SymbolStats[]>([])
   const [directionStats, setDirectionStats] = useState<DirectionStats[]>([])
+  const prevOpenCountRef = useRef<number | undefined>(undefined)
 
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(20)
@@ -396,6 +390,51 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
   const [filterSide, setFilterSide] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'time' | 'pnl' | 'pnl_pct'>('time')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  const historyFetchLimit = Math.max(200, pageSize * 5)
+
+  const {
+    data: historyData,
+    error: swrError,
+    isLoading,
+    mutate: refreshHistory,
+  } = useSWR(
+    traderId ? [positionHistorySWRKey(traderId), historyFetchLimit] : null,
+    ([, limit]) => api.getPositionHistory(traderId, limit as number, true),
+    {
+      refreshInterval: 15000,
+      revalidateOnFocus: true,
+      dedupingInterval: 5000,
+    }
+  )
+
+  useEffect(() => {
+    if (!historyData) return
+    setPositions(historyData.positions || [])
+    setStats(historyData.stats)
+    setSymbolStats(historyData.symbol_stats || [])
+    setDirectionStats(historyData.direction_stats || [])
+  }, [historyData])
+
+  // Immediate refresh when a position is closed (open count drops on dashboard poll)
+  useEffect(() => {
+    if (
+      traderId &&
+      prevOpenCountRef.current !== undefined &&
+      openPositionCount !== undefined &&
+      openPositionCount < prevOpenCountRef.current
+    ) {
+      refreshHistory()
+    }
+    prevOpenCountRef.current = openPositionCount
+  }, [openPositionCount, traderId, refreshHistory])
+
+  const loading = isLoading && !historyData
+  const error = swrError
+    ? swrError instanceof Error
+      ? swrError.message
+      : 'Failed to load history'
+    : null
 
   const [decisionsCache, setDecisionsCache] = useState<DecisionRecord[] | null>(
     null
@@ -470,33 +509,6 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
     setModalDecision(null)
     setModalError(null)
   }, [])
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        // Fetch more data than needed to support filtering, but respect pageSize for initial load
-        const data = await api.getPositionHistory(
-          traderId,
-          Math.max(200, pageSize * 5),
-          true
-        )
-        setPositions(data.positions || [])
-        setStats(data.stats)
-        setSymbolStats(data.symbol_stats || [])
-        setDirectionStats(data.direction_stats || [])
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load history')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (traderId) {
-      fetchData()
-    }
-  }, [traderId, pageSize])
 
   // Get unique symbols for filter
   const uniqueSymbols = useMemo(() => {

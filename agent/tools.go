@@ -1797,44 +1797,25 @@ func (a *Agent) toolManageModelConfig(storeUserID, argsJSON string) string {
 		}).Validate(); err != nil {
 			return fmt.Sprintf(`{"error":"%s"}`, err)
 		}
-		existingByProvider, err := a.findModelByProvider(storeUserID, provider)
-		if err != nil {
-			return fmt.Sprintf(`{"error":"failed to inspect existing model configs: %s"}`, err)
-		}
-		excludeID := ""
-		if existingByProvider != nil {
-			modelID = existingByProvider.ID
-			excludeID = existingByProvider.ID
-		}
-		if err := a.ensureUniqueModelName(storeUserID, name, excludeID); err != nil {
+		if err := a.ensureUniqueModelName(storeUserID, name, ""); err != nil {
 			return fmt.Sprintf(`{"error":"%s"}`, err)
 		}
-		if err := a.store.AIModel().UpdateWithName(
+		created, err := a.store.AIModel().CreateDedicated(
 			storeUserID,
-			modelID,
+			provider,
 			name,
-			enabled,
 			strings.TrimSpace(args.APIKey),
 			customAPIURL,
 			customModelName,
-		); err != nil {
+			enabled,
+		)
+		if err != nil {
 			return fmt.Sprintf(`{"error":"failed to create model config: %s"}`, err)
-		}
-		createdID := modelID
-		if modelID == provider {
-			createdID = fmt.Sprintf("%s_%s", storeUserID, provider)
-		}
-		model, err := a.store.AIModel().Get(storeUserID, createdID)
-		if err != nil {
-			model, err = a.store.AIModel().Get(storeUserID, modelID)
-		}
-		if err != nil {
-			return fmt.Sprintf(`{"error":"model created but failed to reload: %s"}`, err)
 		}
 		result, _ := json.Marshal(map[string]any{
 			"status": "ok",
 			"action": "create",
-			"model":  safeModelForTool(model),
+			"model":  safeModelForTool(created),
 		})
 		var payload any
 		if err := json.Unmarshal(result, &payload); err == nil {
@@ -1911,6 +1892,15 @@ func (a *Agent) toolManageModelConfig(storeUserID, argsJSON string) string {
 		modelID := strings.TrimSpace(args.ModelID)
 		if modelID == "" {
 			return `{"error":"model_id is required for delete"}`
+		}
+		if traders, err := a.store.Trader().ListByAIModelID(storeUserID, modelID); err == nil && len(traders) > 0 {
+			names := make([]string, 0, len(traders))
+			for _, t := range traders {
+				if t != nil {
+					names = append(names, t.Name)
+				}
+			}
+			return fmt.Sprintf(`{"error":"model is bound to traders: %s"}`, strings.Join(names, ", "))
 		}
 		if err := a.store.AIModel().Delete(storeUserID, modelID); err != nil {
 			return fmt.Sprintf(`{"error":"failed to delete model config: %s"}`, err)
@@ -3179,9 +3169,9 @@ func strategyLockedFieldError(lang, field string) string {
 	switch strings.TrimSpace(field) {
 	case "max_positions":
 		if lang == "zh" {
-			return "最大持仓数是 System enforced 字段，策略编辑页不提供普通输入控件，Agent 不能修改。"
+			return "最大持仓数已改为用户可配置项，请通过 risk_control.max_positions 设置（0 表示跟随候选币数量）。"
 		}
-		return "Max positions is System enforced in the strategy editor and cannot be changed by the agent."
+		return "Max positions is user-configurable via risk_control.max_positions (0 = follow candidate coin count)."
 	case "btceth_max_position_value_ratio":
 		if lang == "zh" {
 			return "BTC/ETH 单币仓位上限是 System enforced 字段，策略编辑页不提供普通输入控件，Agent 不能修改。"
@@ -3218,7 +3208,7 @@ func strategyConfigContainsLockedField(config map[string]any) (string, bool) {
 		return "min_position_size", true
 	}
 	if risk, ok := config["risk_control"].(map[string]any); ok {
-		for _, field := range []string{"max_positions", "btc_eth_max_position_value_ratio", "btceth_max_position_value_ratio", "altcoin_max_position_value_ratio", "max_margin_usage", "min_position_size"} {
+		for _, field := range []string{"btc_eth_max_position_value_ratio", "btceth_max_position_value_ratio", "altcoin_max_position_value_ratio", "max_margin_usage", "min_position_size"} {
 			if _, ok := risk[field]; ok {
 				return field, true
 			}
@@ -3226,7 +3216,7 @@ func strategyConfigContainsLockedField(config map[string]any) (string, bool) {
 	}
 	if aiConfig, ok := config["ai_config"].(map[string]any); ok {
 		if risk, ok := aiConfig["risk_control"].(map[string]any); ok {
-			for _, field := range []string{"max_positions", "btc_eth_max_position_value_ratio", "btceth_max_position_value_ratio", "altcoin_max_position_value_ratio", "max_margin_usage", "min_position_size"} {
+			for _, field := range []string{"btc_eth_max_position_value_ratio", "btceth_max_position_value_ratio", "altcoin_max_position_value_ratio", "max_margin_usage", "min_position_size"} {
 				if _, ok := risk[field]; ok {
 					return field, true
 				}

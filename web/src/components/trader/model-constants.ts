@@ -141,6 +141,51 @@ export const AI_PROVIDER_CONFIG: Record<string, AIProviderConfig> = {
   },
 }
 
+/** API model id variants per provider (multiple configs per provider). */
+export const PROVIDER_MODEL_VARIANTS: Record<
+  string,
+  { id: string; label: string }[]
+> = {
+  deepseek: [
+    { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+    { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+    { id: 'deepseek-chat', label: 'DeepSeek Chat (V3)' },
+    { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner (R1)' },
+  ],
+  openai: [
+    { id: 'gpt-5.4', label: 'GPT-5.4' },
+    { id: 'gpt-5.3', label: 'GPT-5.3' },
+    { id: 'gpt-5-mini', label: 'GPT-5 Mini' },
+    { id: 'gpt-5.2', label: 'GPT-5.2' },
+  ],
+  qwen: [
+    { id: 'qwen3-max', label: 'Qwen3 Max' },
+    { id: 'qwen-max', label: 'Qwen Max' },
+    { id: 'qwen-plus', label: 'Qwen Plus' },
+    { id: 'qwen-flash', label: 'Qwen Flash' },
+  ],
+  claude: [
+    { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  ],
+  gemini: [
+    { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
+    { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },
+  ],
+  grok: [{ id: 'grok-3-latest', label: 'Grok 3' }],
+  kimi: [{ id: 'moonshot-v1-auto', label: 'Moonshot Auto' }],
+  minimax: [{ id: 'MiniMax-M2.7', label: 'MiniMax M2.7' }],
+}
+
+export function providerVariants(provider: string) {
+  const key = provider?.toLowerCase?.() || ''
+  const variants = PROVIDER_MODEL_VARIANTS[key]
+  if (variants?.length) return variants
+  const def = AI_PROVIDER_CONFIG[key]?.defaultModel
+  if (def) return [{ id: def, label: def }]
+  return []
+}
+
 // Helper function to get exchange display name from exchange ID (UUID)
 export function getExchangeDisplayName(exchangeId: string | undefined, exchanges: { id: string; exchange_type?: string; name: string; account_name?: string }[]): string {
   if (!exchangeId) return 'Unknown'

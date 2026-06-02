@@ -19,6 +19,7 @@ import {
 import { DecisionDetailModal } from '../trader/DecisionDetailModal'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { t } from '../../i18n/translations'
+import { formatBeijingDateTime } from '../../utils/format'
 
 type ActionFilter = 'all' | 'open' | 'close' | 'liquidated'
 type TimeSortOrder = 'newest' | 'oldest'
@@ -242,7 +243,7 @@ function TradeTable({
                     className="px-3 py-2 font-mono text-xs whitespace-nowrap"
                     style={{ color: '#848E9C' }}
                   >
-                    {new Date(trade.ts).toLocaleString()}
+                    {formatBeijingDateTime(trade.ts) ?? '-'}
                   </td>
                   <td
                     className="px-3 py-2 font-mono font-bold whitespace-nowrap"

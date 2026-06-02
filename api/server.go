@@ -195,11 +195,17 @@ Body: {"show_in_competition":<bool>}`,
 				`Returns: [{"id":"<EXACT id — use this as ai_model_id when creating/updating a trader>","name":"<display name>","provider":"<short provider name — NOT a valid id>","enabled":<bool>}]
 CRITICAL: The "id" field (e.g. "abc123_deepseek") is what you must use for ai_model_id. The "provider" field ("deepseek") is NOT valid as an id.`,
 				s.handleGetModelConfigs)
-			s.routeWithSchema(protected, "PUT", "/models", "Configure an AI model provider",
-				`Body: {"models":{"<model_id>":{"enabled":<bool>,"api_key":"<string>","custom_api_url":"<string, leave empty to use provider default>","custom_model_name":"<string, leave empty to use provider default>"}}}
-model_id values: "openai","deepseek","qwen","kimi","grok","gemini","claude"
-Defaults when custom fields empty: openai→api.openai.com/v1, deepseek→api.deepseek.com, qwen→dashscope.aliyuncs.com/compatible-mode/v1, kimi→api.moonshot.ai/v1, grok→api.x.ai/v1, gemini→generativelanguage.googleapis.com/v1beta/openai, claude→api.anthropic.com/v1`,
+			s.routeWithSchema(protected, "POST", "/models", "Create a new AI model config (multiple per provider allowed)",
+				`Body: {"provider":"deepseek","name":"DeepSeek V4 Flash","api_key":"<string>","custom_model_name":"deepseek-v4-flash","custom_api_url":"","enabled":true}
+Returns: {"id":"<use as ai_model_id>","name":"...","provider":"deepseek",...}`,
+				s.handleCreateModelConfig)
+			s.routeWithSchema(protected, "PUT", "/models", "Update AI model config(s) by exact model id",
+				`Body: {"models":{"<model_id>":{"enabled":<bool>,"api_key":"<string>","custom_api_url":"<string>","custom_model_name":"<string>","name":"<display name>"}}}
+Use the exact "id" from GET /api/models — not the provider slug when multiple models share a provider.`,
 				s.handleUpdateModelConfigs)
+			s.routeWithSchema(protected, "DELETE", "/models/:id", "Delete an AI model config",
+				`Fails with 409 if any trader still uses this ai_model_id.`,
+				s.handleDeleteModelConfig)
 
 			// Exchange configuration
 			s.routeWithSchema(protected, "GET", "/exchanges", "List exchange accounts",
@@ -290,7 +296,7 @@ StrategyConfig fields:
   indicators.enable_oi_ranking: ALWAYS true, oi_ranking_duration:"1h", oi_ranking_limit:10
   indicators.enable_netflow_ranking: ALWAYS true, netflow_ranking_duration:"1h", netflow_ranking_limit:10
   indicators.enable_price_ranking: ALWAYS true, price_ranking_duration:"1h,4h,24h", price_ranking_limit:10
-  risk_control.max_positions: max simultaneous positions (1=single coin, 3=diversified, 5=wide)
+  risk_control.max_positions: max simultaneous positions (0=auto: same as candidate coin count; 1=single coin; max 10)
   risk_control.btc_eth_max_leverage: BTC/ETH leverage (conservative:3-5, moderate:5-10, aggressive:10-20)
   risk_control.altcoin_max_leverage: altcoin leverage (usually lower than BTC leverage)
   risk_control.btc_eth_max_position_value_ratio: max position size as multiple of equity (default 5)
