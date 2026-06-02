@@ -321,7 +321,7 @@ export function BacktestOverviewTab({
       exit={{ opacity: 0 }}
     >
       {equity && equity.length > 0 ? (
-        <EquityChart equity={equity} trades={trades ?? []} />
+        <EquityChart equity={equity} trades={trades ?? []} language={language} />
       ) : (
         <div className="py-12 text-center" style={{ color: '#5E6673' }}>
           {tr('charts.equityEmpty')}

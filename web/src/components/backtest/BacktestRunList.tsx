@@ -102,9 +102,17 @@ export function BacktestRunList({
           </div>
         ) : (
           runs.map((run) => (
-            <button
+            <div
               key={run.run_id}
               onClick={() => onSelectRun(run.run_id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelectRun(run.run_id)
+                }
+              }}
+              role="button"
+              tabIndex={0}
               className="w-full p-3 rounded-lg text-left transition-all"
               style={{
                 background: run.run_id === selectedRunId ? 'rgba(240,185,11,0.1)' : '#1E2329',
@@ -134,7 +142,7 @@ export function BacktestRunList({
                       onReuseRun(run.run_id)
                     }}
                     className="p-1 rounded hover:bg-[#2B3139]"
-                    title={language === 'zh' ? '复用参数新建回测' : 'Reuse config to start a new run'}
+                    title={t('backtestPage.runList.reuseRunTitle', language)}
                   >
                     <Copy className="w-3 h-3" style={{ color: '#5E6673' }} />
                   </button>
@@ -164,13 +172,13 @@ export function BacktestRunList({
                       onDeleteRun(run.run_id)
                     }}
                     className="p-1 rounded hover:bg-[#2B3139]"
-                    title={language === 'zh' ? '删除该回测' : 'Delete this run'}
+                    title={t('backtestPage.runList.deleteRunTitle', language)}
                   >
                     <Trash2 className="w-3 h-3" style={{ color: '#F6465D' }} />
                   </button>
                 </div>
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>

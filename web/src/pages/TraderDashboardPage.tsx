@@ -166,6 +166,16 @@ export function TraderDashboardPage({
         positionsCurrentPage * positionsPageSize
     )
 
+    const chartCandidateSymbols = useMemo(() => {
+        const fromPositions = (positions || []).map((p) => p.symbol?.toUpperCase()).filter(Boolean) as string[]
+        const fromDecisions = (decisions || [])
+            .flatMap((d) => d.candidate_coins || [])
+            .map((s) => s?.toUpperCase())
+            .filter(Boolean) as string[]
+        const merged = [...fromPositions, ...fromDecisions]
+        return merged.filter((s, i) => merged.indexOf(s) === i)
+    }, [positions, decisions])
+
     // Reset page when positions change
     useEffect(() => {
         setPositionsCurrentPage(1)
@@ -588,6 +598,7 @@ export function TraderDashboardPage({
                                     selectedTrader.exchange_id,
                                     exchanges
                                 )}
+                                candidateSymbols={chartCandidateSymbols}
                             />
                         </div>
 

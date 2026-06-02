@@ -264,11 +264,12 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 	// Normalize symbol for database lookup
 	normalizedSymbol := market.Normalize(decision.Symbol)
 
-	// Get entry price and quantity - prioritize local database for accurate quantity
+	// Get entry price and quantity.
+	// For partial close, always prefer exchange live quantity as source of truth.
 	var entryPrice float64
 	var quantity float64
 
-	// First try to get from local database (more accurate for quantity)
+	// First read local DB for entry price fallback.
 	if at.store != nil {
 		if openPos, err := at.store.Position().GetOpenPositionBySymbol(at.id, normalizedSymbol, "LONG"); err == nil && openPos != nil {
 			quantity = openPos.Quantity
@@ -277,23 +278,27 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 		}
 	}
 
-	// Fallback to exchange API if local data not found
-	if quantity == 0 {
-		positions, err := at.trader.GetPositions()
-		if err == nil {
-			for _, pos := range positions {
-				if pos["symbol"] == decision.Symbol && pos["side"] == "long" {
-					if ep, ok := pos["entryPrice"].(float64); ok {
-						entryPrice = ep
-					}
-					if amt, ok := pos["positionAmt"].(float64); ok && amt > 0 {
-						quantity = amt
-					}
-					break
+	// Always try exchange API and prefer live quantity to avoid stale local-db mismatch.
+	exchangeQty := 0.0
+	positions, err := at.trader.GetPositions()
+	if err == nil {
+		for _, pos := range positions {
+			if pos["symbol"] == decision.Symbol && pos["side"] == "long" {
+				if ep, ok := pos["entryPrice"].(float64); ok && ep > 0 {
+					entryPrice = ep
 				}
+				if amt, ok := pos["positionAmt"].(float64); ok && amt > 0 {
+					exchangeQty = amt
+				}
+				break
 			}
 		}
-		logger.Infof("  📊 Using exchange position data: qty=%.8f, entry=%.2f", quantity, entryPrice)
+	}
+	if exchangeQty > 0 {
+		quantity = exchangeQty
+		logger.Infof("  📊 Using exchange position data (preferred): qty=%.8f, entry=%.2f", quantity, entryPrice)
+	} else {
+		logger.Infof("  📊 Exchange position data unavailable, fallback qty=%.8f, entry=%.2f", quantity, entryPrice)
 	}
 
 	// Close position
@@ -338,11 +343,12 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 	// Normalize symbol for database lookup
 	normalizedSymbol := market.Normalize(decision.Symbol)
 
-	// Get entry price and quantity - prioritize local database for accurate quantity
+	// Get entry price and quantity.
+	// For partial close, always prefer exchange live quantity as source of truth.
 	var entryPrice float64
 	var quantity float64
 
-	// First try to get from local database (more accurate for quantity)
+	// First read local DB for entry price fallback.
 	if at.store != nil {
 		if openPos, err := at.store.Position().GetOpenPositionBySymbol(at.id, normalizedSymbol, "SHORT"); err == nil && openPos != nil {
 			quantity = openPos.Quantity
@@ -351,23 +357,32 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 		}
 	}
 
-	// Fallback to exchange API if local data not found
-	if quantity == 0 {
-		positions, err := at.trader.GetPositions()
-		if err == nil {
-			for _, pos := range positions {
-				if pos["symbol"] == decision.Symbol && pos["side"] == "short" {
-					if ep, ok := pos["entryPrice"].(float64); ok {
-						entryPrice = ep
-					}
-					if amt, ok := pos["positionAmt"].(float64); ok {
-						quantity = -amt // positionAmt is negative for short
-					}
-					break
+	// Always try exchange API and prefer live quantity to avoid stale local-db mismatch.
+	exchangeQty := 0.0
+	positions, err := at.trader.GetPositions()
+	if err == nil {
+		for _, pos := range positions {
+			if pos["symbol"] == decision.Symbol && pos["side"] == "short" {
+				if ep, ok := pos["entryPrice"].(float64); ok && ep > 0 {
+					entryPrice = ep
 				}
+				if amt, ok := pos["positionAmt"].(float64); ok {
+					if amt < 0 {
+						amt = -amt
+					}
+					if amt > 0 {
+						exchangeQty = amt
+					}
+				}
+				break
 			}
 		}
-		logger.Infof("  📊 Using exchange position data: qty=%.8f, entry=%.2f", quantity, entryPrice)
+	}
+	if exchangeQty > 0 {
+		quantity = exchangeQty
+		logger.Infof("  📊 Using exchange position data (preferred): qty=%.8f, entry=%.2f", quantity, entryPrice)
+	} else {
+		logger.Infof("  📊 Exchange position data unavailable, fallback qty=%.8f, entry=%.2f", quantity, entryPrice)
 	}
 
 	// Close position

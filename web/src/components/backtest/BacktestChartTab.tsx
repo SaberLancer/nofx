@@ -47,9 +47,10 @@ import type {
 interface EquityChartProps {
   equity: BacktestEquityPoint[]
   trades: BacktestTradeEvent[]
+  language: Language
 }
 
-export function EquityChart({ equity, trades }: EquityChartProps) {
+export function EquityChart({ equity, trades, language }: EquityChartProps) {
   const chartData = useMemo(() => {
     return equity.map((point) => ({
       time: new Date(point.ts).toLocaleString(),
@@ -111,7 +112,7 @@ export function EquityChart({ equity, trades }: EquityChartProps) {
               color: '#EAECEF',
             }}
             labelStyle={{ color: '#848E9C' }}
-            formatter={(value: number) => [`$${value.toFixed(2)}`, 'Equity']}
+            formatter={(value: number) => [`$${value.toFixed(2)}`, t('backtestChart.tooltipEquity', language)]}
           />
           <Area
             type="monotone"
@@ -470,7 +471,7 @@ export function CandlestickChartComponent({ runId, trades, language }: Candlesti
         setIsLoading(false)
       })
       .catch((err) => {
-        setError(err.message || 'Failed to load klines')
+        setError(err.message || t('backtestChart.loadKlineFailed', language))
         setIsLoading(false)
       })
 
@@ -611,7 +612,7 @@ export function BacktestChartTab({
           {t('backtestChart.equityCurve', language)}
         </h4>
         {equity && equity.length > 0 ? (
-          <EquityChart equity={equity} trades={trades ?? []} />
+          <EquityChart equity={equity} trades={trades ?? []} language={language} />
         ) : (
           <div className="py-12 text-center" style={{ color: '#5E6673' }}>
             {tr('charts.equityEmpty')}

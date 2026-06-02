@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   RefreshCw,
   Zap,
+  CircleHelp,
 } from 'lucide-react'
 import type { AIModel, Strategy } from '../../types'
 import { t as globalT } from '../../i18n/translations'
@@ -550,6 +551,9 @@ export function BacktestConfigForm({
                     className="accent-[#F0B90B]"
                   />
                   {tr('form.cacheAiLabel')}
+                  <span title={tr('form.cacheAiHint')} className="inline-flex items-center">
+                    <CircleHelp className="w-3.5 h-3.5 text-[#5E6673]" />
+                  </span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -559,6 +563,9 @@ export function BacktestConfigForm({
                     className="accent-[#F0B90B]"
                   />
                   {tr('form.replayOnlyLabel')}
+                  <span title={tr('form.replayOnlyHint')} className="inline-flex items-center">
+                    <CircleHelp className="w-3.5 h-3.5 text-[#5E6673]" />
+                  </span>
                 </label>
               </div>
 

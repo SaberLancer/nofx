@@ -72,6 +72,11 @@ export function BacktestPage() {
     if (!el) return
     const sync = () => setLeftColumnHeight(el.offsetHeight)
     sync()
+    if (typeof ResizeObserver === 'undefined') {
+      // Some embedded runtimes may not expose ResizeObserver.
+      // Keep a safe static height instead of crashing the whole page.
+      return
+    }
     const ro = new ResizeObserver(sync)
     ro.observe(el)
     return () => ro.disconnect()
@@ -314,25 +319,21 @@ export function BacktestPage() {
   const handleReuseRun = async (runId: string) => {
     try {
       const first = await confirmToast(
-        language === 'zh'
-          ? `将复用 ${runId} 的回测参数创建新回测，是否继续？`
-          : `Reuse parameters from ${runId} to create a new backtest?`,
+        tr('toasts.reuseConfirmMessage', { id: runId }),
         {
-          title: language === 'zh' ? '复用回测参数' : 'Reuse Backtest Config',
-          okText: language === 'zh' ? '继续' : 'Continue',
-          cancelText: language === 'zh' ? '取消' : 'Cancel',
+          title: tr('toasts.reuseConfirmTitle'),
+          okText: tr('toasts.reuseConfirmOk'),
+          cancelText: t('backtestPageExtra.cancel', language),
         }
       )
       if (!first) return
 
       const second = await confirmToast(
-        language === 'zh'
-          ? '请再次确认：将立即启动一个新的回测任务。'
-          : 'Please confirm again: a new backtest run will start immediately.',
+        tr('toasts.finalConfirmMessage'),
         {
-          title: language === 'zh' ? '二次确认' : 'Final Confirmation',
-          okText: language === 'zh' ? '确认启动' : 'Start New Run',
-          cancelText: language === 'zh' ? '取消' : 'Cancel',
+          title: tr('toasts.finalConfirmTitle'),
+          okText: tr('toasts.finalConfirmOk'),
+          cancelText: t('backtestPageExtra.cancel', language),
         }
       )
       if (!second) return
