@@ -177,8 +177,6 @@ func (t *OKXTrader) CloseLong(symbol string, quantity float64) (map[string]inter
 		return nil, fmt.Errorf("failed to get instrument info: %w", err)
 	}
 
-	// Invalidate position cache and get fresh positions
-	t.InvalidatePositionCache()
 	positions, err := t.GetPositions()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get positions: %w", err)
@@ -288,8 +286,6 @@ func (t *OKXTrader) CloseShort(symbol string, quantity float64) (map[string]inte
 		return nil, fmt.Errorf("failed to get instrument info: %w", err)
 	}
 
-	// Invalidate position cache and get fresh positions
-	t.InvalidatePositionCache()
 	positions, err := t.GetPositions()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get positions: %w", err)

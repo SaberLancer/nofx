@@ -62,8 +62,8 @@ func (at *AutoTrader) runCycle() error {
 	// Reload strategy from DB when edited (hot update for running traders)
 	at.reloadStrategyConfigIfNeeded()
 
-	// 4. Collect trading context
-	ctx, err := at.buildTradingContext()
+	// 4. Collect trading context (PnL rules run when positions are refreshed inside)
+	ctx, pnlActed, err := at.buildTradingContext(record)
 	if err != nil {
 		at.logErrorf("failed to build trading context: %v", err)
 		record.Success = false
@@ -76,9 +76,8 @@ func (at *AutoTrader) runCycle() error {
 	// NOTE: Must be called BEFORE candidate coins check to ensure equity is always recorded
 	at.saveEquitySnapshot(ctx)
 
-	// Code-enforced lock-profit / stop-loss / peak pullback (does not wait for AI)
-	if n := at.enforcePositionPnLRules(ctx, record); n > 0 {
-		if refreshed, refreshErr := at.refreshTradingContextAfterPnLEnforce(n, record); refreshErr != nil {
+	if pnlActed > 0 {
+		if refreshed, refreshErr := at.refreshTradingContextAfterPnLEnforce(pnlActed, record); refreshErr != nil {
 			at.logWarnf("⚠️ Failed to refresh context after PnL enforce: %v (AI will use pre-enforce snapshot)", refreshErr)
 			if record != nil {
 				record.ExecutionLog = append(record.ExecutionLog,
@@ -367,12 +366,15 @@ func (at *AutoTrader) runCycle() error {
 	return nil
 }
 
-// buildTradingContext builds trading context
-func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
+// buildTradingContext builds trading context.
+// pnlRecord is optional; when set (AI cycle), PnL enforcement logs attach to that decision.
+func (at *AutoTrader) buildTradingContext(pnlRecord *store.DecisionRecord) (*kernel.Context, int, error) {
 	// 1. Get account information
+	pnlActed := 0
+
 	balance, err := at.trader.GetBalance()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account balance: %w", err)
+		return nil, 0, fmt.Errorf("failed to get account balance: %w", err)
 	}
 
 	// Get account fields
@@ -402,7 +404,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 	// 2. Get position information
 	positions, err := at.trader.GetPositions()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get positions: %w", err)
+		return nil, 0, fmt.Errorf("failed to get positions: %w", err)
 	}
 
 	var positionInfos []kernel.PositionInfo
@@ -441,7 +443,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
 		// Get position open time from exchange (preferred) or fallback to local tracking
-		posKey := symbol + "_" + side
+		posKey := peakCacheKey(symbol, side)
 		at.UpdatePeakPnL(symbol, side, pnlPct)
 		currentPositionKeys[posKey] = true
 
@@ -496,6 +498,13 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 			delete(at.positionFirstSeenTime, key)
 		}
 	}
+
+	// Code-enforced PnL rules: run immediately after positions are refreshed
+	source := "trading_context"
+	if pnlRecord != nil {
+		source = "ai_cycle"
+	}
+	pnlActed = at.onPositionsUpdated(positionInfos, source, pnlRecord)
 
 	// 3. Use strategy engine to get candidate coins (must have strategy engine)
 	var candidateCoins []kernel.CandidateCoin
@@ -661,7 +670,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		}
 	}
 
-	return ctx, nil
+	return ctx, pnlActed, nil
 }
 
 // sortDecisionsByPriority sorts decisions: close positions first, then open positions, finally hold/wait

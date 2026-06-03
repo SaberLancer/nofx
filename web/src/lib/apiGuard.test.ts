@@ -117,7 +117,7 @@ describe('API Guard Logic (PR #669)', () => {
       expect(statusKey).toBeNull()
     })
 
-    it('should guard account API', () => {
+    it('should guard account snapshot API (account + positions)', () => {
       const user = null
       const token = null
       const traderId = '123'
@@ -129,20 +129,6 @@ describe('API Guard Logic (PR #669)', () => {
           : null
 
       expect(accountKey).toBeNull()
-    })
-
-    it('should guard positions API', () => {
-      const user = null
-      const token = null
-      const traderId = '123'
-      const currentPage = 'trader'
-
-      const positionsKey =
-        user && token && currentPage === 'trader' && traderId
-          ? `positions-${traderId}`
-          : null
-
-      expect(positionsKey).toBeNull()
     })
 
     it('should guard decisions API', () => {
@@ -187,14 +173,9 @@ describe('API Guard Logic (PR #669)', () => {
         user && token && currentPage === 'trader' && traderId
           ? `account-${traderId}`
           : null
-      const positionsKey =
-        user && token && currentPage === 'trader' && traderId
-          ? `positions-${traderId}`
-          : null
 
       expect(statusKey).toBe('status-123')
       expect(accountKey).toBe('account-123')
-      expect(positionsKey).toBe('positions-123')
     })
   })
 

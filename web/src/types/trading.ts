@@ -27,6 +27,8 @@ export interface AccountInfo {
   position_count: number
   margin_used: number
   margin_used_pct: number
+  /** Present on GET /api/account; omitted when only account fields are needed */
+  positions?: Position[]
 }
 
 export interface Position {

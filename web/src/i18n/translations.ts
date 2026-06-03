@@ -330,6 +330,9 @@ const translationsBase = {
       'Invalid private key format. Expected {length} hexadecimal characters (optional 0x prefix).',
     testnetDescription:
       'Enable to connect to exchange test environment for simulated trading',
+    okxSimulatedTrading: 'OKX Demo Trading (Simulated)',
+    okxSimulatedTradingDesc:
+      'When enabled, API requests use x-simulated-trading=1. Use API keys from OKX demo/simulated trading.',
     securityWarning: 'Security Warning',
     saveConfiguration: 'Save Configuration',
 
@@ -1212,6 +1215,12 @@ const translationsBase = {
       copyAddress: 'Copy address',
       noAddressConfigured: 'No address configured',
       action: 'Action',
+      operations: 'Actions',
+      pnlHistoryBtn: 'PnL History',
+      pnlHistoryTitle: 'Margin PnL% History',
+      pnlHistoryEmpty: 'No yield updates recorded yet. History builds as positions refresh.',
+      pnlHistoryTime: 'Updated At',
+      pnlHistoryCount: '{count} records (newest first, Beijing time)',
       entry: 'Entry',
       mark: 'Mark',
       qty: 'Qty',
@@ -1731,6 +1740,9 @@ const translationsBase = {
     twoStageInvalidFormat:
       '私钥格式不正确，应为 {length} 位十六进制字符（可选 0x 前缀）。',
     testnetDescription: '启用后将连接到交易所测试环境,用于模拟交易',
+    okxSimulatedTrading: 'OKX 模拟盘',
+    okxSimulatedTradingDesc:
+      '启用后 API 请求使用 x-simulated-trading=1，须使用 OKX 模拟盘创建的 API Key。',
     securityWarning: '安全提示',
     saveConfiguration: '保存配置',
 
@@ -2571,6 +2583,12 @@ const translationsBase = {
       copyAddress: '复制地址',
       noAddressConfigured: '未配置地址',
       action: '操作',
+      operations: '操作',
+      pnlHistoryBtn: '历史收益率',
+      pnlHistoryTitle: '收益率更新历史',
+      pnlHistoryEmpty: '暂无记录。持仓列表刷新后会自动累积 Margin PnL% 历史。',
+      pnlHistoryTime: '更新时间',
+      pnlHistoryCount: '共 {count} 条（最新在上，北京时间）',
       entry: '入场价',
       mark: '标记价',
       qty: '数量',
@@ -3061,6 +3079,9 @@ const translationsBase = {
     twoStageSubmit: 'Konfirmasi',
     twoStageInvalidFormat: 'Format private key tidak valid. Diharapkan {length} karakter heksadesimal (awalan 0x opsional).',
     testnetDescription: 'Aktifkan untuk terhubung ke lingkungan uji coba bursa untuk trading simulasi',
+    okxSimulatedTrading: 'OKX Demo Trading (Simulasi)',
+    okxSimulatedTradingDesc:
+      'Jika diaktifkan, permintaan API memakai x-simulated-trading=1. Gunakan API key dari mode demo OKX.',
     securityWarning: 'Peringatan Keamanan',
     saveConfiguration: 'Simpan Konfigurasi',
 
@@ -3719,6 +3740,12 @@ const translationsBase = {
       copyAddress: 'Salin alamat',
       noAddressConfigured: 'Alamat belum dikonfigurasi',
       action: 'Aksi',
+      operations: 'Aksi',
+      pnlHistoryBtn: 'Riwayat PnL',
+      pnlHistoryTitle: 'Riwayat Margin PnL%',
+      pnlHistoryEmpty: 'Belum ada catatan. Riwayat terisi saat posisi diperbarui.',
+      pnlHistoryTime: 'Diperbarui',
+      pnlHistoryCount: '{count} catatan (terbaru di atas, waktu Beijing)',
       entry: 'Entry',
       mark: 'Mark',
       qty: 'Qty',

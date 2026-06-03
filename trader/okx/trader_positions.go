@@ -10,15 +10,6 @@ import (
 
 // GetPositions gets all positions
 func (t *OKXTrader) GetPositions() ([]map[string]interface{}, error) {
-	// Check cache
-	t.positionsCacheMutex.RLock()
-	if t.cachedPositions != nil && time.Since(t.positionsCacheTime) < t.cacheDuration {
-		t.positionsCacheMutex.RUnlock()
-		logger.Infof("✓ Using cached OKX positions")
-		return t.cachedPositions, nil
-	}
-	t.positionsCacheMutex.RUnlock()
-
 	logger.Infof("🔄 Calling OKX API to get positions...")
 	data, err := t.doRequest("GET", okxPositionPath+"?instType=SWAP", nil)
 	if err != nil {
@@ -108,21 +99,7 @@ func (t *OKXTrader) GetPositions() ([]map[string]interface{}, error) {
 		result = append(result, posMap)
 	}
 
-	// Update cache
-	t.positionsCacheMutex.Lock()
-	t.cachedPositions = result
-	t.positionsCacheTime = time.Now()
-	t.positionsCacheMutex.Unlock()
-
 	return result, nil
-}
-
-// InvalidatePositionCache clears the position cache to force fresh data on next call
-func (t *OKXTrader) InvalidatePositionCache() {
-	t.positionsCacheMutex.Lock()
-	t.cachedPositions = nil
-	t.positionsCacheTime = time.Time{}
-	t.positionsCacheMutex.Unlock()
 }
 
 // getInstrument gets instrument info

@@ -72,7 +72,6 @@ func newTestOKXTrader(rt *recordingTransport, isCrossMargin bool) *OKXTrader {
 		httpClient: &http.Client{
 			Transport: rt,
 		},
-		cacheDuration:        15 * time.Second,
 		instrumentsCache:     make(map[string]*OKXInstrument),
 		instrumentsCacheTime: time.Now(),
 	}

@@ -63,9 +63,9 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
     user && token && traderId ? `account-${traderId}` : null,
     () => api.getAccount(traderId, true),
     {
-      refreshInterval: 15000, // 15秒刷新（配合后端缓存）
+      refreshInterval: 5000,
       revalidateOnFocus: false,
-      dedupingInterval: 10000,
+      dedupingInterval: 0,
     }
   )
 

@@ -755,6 +755,34 @@ export function ExchangeConfigModal({
                 </>
               )}
 
+              {/* Testnet / OKX simulated trading */}
+              {currentExchangeType && (
+                <div
+                  className="p-4 rounded-xl flex items-start gap-3"
+                  style={{ background: '#0B0E11', border: `1px solid ${testnet ? 'rgba(240, 185, 11, 0.4)' : '#2B3139'}` }}
+                >
+                  <input
+                    type="checkbox"
+                    id="exchange-testnet"
+                    checked={testnet}
+                    onChange={(e) => setTestnet(e.target.checked)}
+                    className="mt-1 h-4 w-4 accent-[#F0B90B] cursor-pointer"
+                  />
+                  <label htmlFor="exchange-testnet" className="flex-1 cursor-pointer select-none">
+                    <div className="text-sm font-semibold" style={{ color: '#EAECEF' }}>
+                      {currentExchangeType === 'okx'
+                        ? t('okxSimulatedTrading', language)
+                        : t('useTestnet', language)}
+                    </div>
+                    <div className="text-xs mt-1 leading-relaxed" style={{ color: '#848E9C' }}>
+                      {currentExchangeType === 'okx'
+                        ? t('okxSimulatedTradingDesc', language)
+                        : t('testnetDescription', language)}
+                    </div>
+                  </label>
+                </div>
+              )}
+
               {/* Buttons */}
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={handleBack} className="flex-1 px-4 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-white/5" style={{ background: '#2B3139', color: '#848E9C' }}>

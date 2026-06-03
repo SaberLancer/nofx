@@ -8,7 +8,9 @@ import { PunkAvatar, getTraderAvatar } from '../components/common/PunkAvatar'
 import { confirmToast, notify } from '../lib/notify'
 import { formatPrice, formatQuantity } from '../utils/format'
 import { t, type Language } from '../i18n/translations'
-import { LogOut, Loader2, Eye, EyeOff, Copy, Check } from 'lucide-react'
+import { LogOut, Loader2, Eye, EyeOff, Copy, Check, History } from 'lucide-react'
+import { usePositionPnlHistory } from '../hooks/usePositionPnlHistory'
+import { PositionPnlHistoryModal } from '../components/trader/PositionPnlHistoryModal'
 import { DeepVoidBackground } from '../components/common/DeepVoidBackground'
 import { NofxSelect } from '../components/ui/select'
 import { GridRiskPanel } from '../components/strategy/GridRiskPanel'
@@ -137,6 +139,9 @@ export function TraderDashboardPage({
     exchanges,
 }: TraderDashboardPageProps) {
     const [closingPosition, setClosingPosition] = useState<string | null>(null)
+    const [pnlHistoryPosition, setPnlHistoryPosition] = useState<Position | null>(null)
+    const { getHistory: getPositionPnlHistory, recordSnapshot: recordPositionPnlSnapshot } =
+        usePositionPnlHistory(selectedTraderId, positions)
     const [selectedChartSymbol, setSelectedChartSymbol] = useState<string | undefined>(undefined)
     const [chartUpdateKey, setChartUpdateKey] = useState<number>(0)
     const chartSectionRef = useRef<HTMLDivElement>(null)
@@ -246,7 +251,6 @@ export function TraderDashboardPage({
             notify.success(t('traderDashboard.positionClosed', language))
             // Use SWR mutate to refresh data instead of reloading page
             await Promise.all([
-                mutate(`positions-${selectedTraderId}`),
                 mutate(`account-${selectedTraderId}`),
                 mutate(
                     (key) =>
@@ -636,7 +640,7 @@ export function TraderDashboardPage({
                                                 <tr>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-left">{t('symbol', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center">{t('side', language)}</th>
-                                                    <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center">{t('traderDashboard.action', language)}</th>
+                                                    <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center">{t('traderDashboard.operations', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right hidden md:table-cell" title={t('entryPrice', language)}>{t('traderDashboard.entry', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right hidden md:table-cell" title={t('markPrice', language)}>{t('traderDashboard.mark', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right" title={t('quantity', language)}>{t('traderDashboard.qty', language)}</th>
@@ -689,23 +693,42 @@ export function TraderDashboardPage({
                                                             </span>
                                                         </td>
                                                         <td className="px-1 py-3 whitespace-nowrap text-center">
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation()
-                                                                    handleClosePosition(pos.symbol, pos.side.toUpperCase())
-                                                                }}
-                                                                disabled={closingPosition === pos.symbol}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed mx-auto bg-nofx-red/10 text-nofx-red border border-nofx-red/30 hover:bg-nofx-red/20"
-                                                                title={t('traderDashboard.closePosition', language)}
+                                                            <div
+                                                                className="inline-flex flex-col items-stretch gap-1"
+                                                                onClick={(e) => e.stopPropagation()}
                                                             >
-                                                                {closingPosition === pos.symbol ? (
-                                                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                                                ) : (
-                                                                    <LogOut className="w-3 h-3" />
-                                                                )}
-                                                                {t('traderDashboard.close', language)}
-                                                            </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        handleClosePosition(
+                                                                            pos.symbol,
+                                                                            pos.side.toUpperCase()
+                                                                        )
+                                                                    }
+                                                                    disabled={closingPosition === pos.symbol}
+                                                                    className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed bg-nofx-red/10 text-nofx-red border border-nofx-red/30 hover:bg-nofx-red/20"
+                                                                    title={t('traderDashboard.closePosition', language)}
+                                                                >
+                                                                    {closingPosition === pos.symbol ? (
+                                                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                                                    ) : (
+                                                                        <LogOut className="w-3 h-3" />
+                                                                    )}
+                                                                    {t('traderDashboard.close', language)}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        recordPositionPnlSnapshot(pos, true)
+                                                                        setPnlHistoryPosition(pos)
+                                                                    }}
+                                                                    className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-all hover:scale-105 bg-nofx-gold/10 text-nofx-gold border border-nofx-gold/30 hover:bg-nofx-gold/20"
+                                                                    title={t('traderDashboard.pnlHistoryBtn', language)}
+                                                                >
+                                                                    <History className="w-3 h-3" />
+                                                                    {t('traderDashboard.pnlHistoryBtn', language)}
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                         <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{formatPrice(pos.entry_price)}</td>
                                                         <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{formatPrice(pos.mark_price)}</td>
@@ -890,6 +913,18 @@ export function TraderDashboardPage({
                     </div>
                 )}
             </div>
+
+            <PositionPnlHistoryModal
+                open={pnlHistoryPosition != null}
+                language={language}
+                position={pnlHistoryPosition}
+                entries={
+                    pnlHistoryPosition
+                        ? getPositionPnlHistory(pnlHistoryPosition)
+                        : []
+                }
+                onClose={() => setPnlHistoryPosition(null)}
+            />
         </DeepVoidBackground>
     )
 }

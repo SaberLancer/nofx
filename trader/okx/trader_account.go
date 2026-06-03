@@ -14,15 +14,6 @@ import (
 
 // GetBalance gets account balance
 func (t *OKXTrader) GetBalance() (map[string]interface{}, error) {
-	// Check cache
-	t.balanceCacheMutex.RLock()
-	if t.cachedBalance != nil && time.Since(t.balanceCacheTime) < t.cacheDuration {
-		t.balanceCacheMutex.RUnlock()
-		logger.Infof("✓ Using cached OKX account balance")
-		return t.cachedBalance, nil
-	}
-	t.balanceCacheMutex.RUnlock()
-
 	logger.Infof("🔄 Calling OKX API to get account balance...")
 	data, err := t.doRequest("GET", okxAccountPath, nil)
 	if err != nil {
@@ -72,12 +63,6 @@ func (t *OKXTrader) GetBalance() (map[string]interface{}, error) {
 	}
 
 	logger.Infof("✓ OKX balance: Total equity=%.2f, Available=%.2f, Unrealized PnL=%.2f", totalEq, usdtAvail, usdtUPL)
-
-	// Update cache
-	t.balanceCacheMutex.Lock()
-	t.cachedBalance = result
-	t.balanceCacheTime = time.Now()
-	t.balanceCacheMutex.Unlock()
 
 	return result, nil
 }

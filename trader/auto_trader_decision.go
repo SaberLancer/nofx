@@ -101,7 +101,36 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get balance: %w", err)
 	}
 
-	// Get account fields
+	rawPositions, err := at.trader.GetPositions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions: %w", err)
+	}
+
+	at.onPositionsUpdatedRaw(rawPositions, "account_info", nil)
+
+	return at.buildAccountInfoFromData(balance, rawPositions), nil
+}
+
+// GetTraderSnapshot returns account fields plus formatted open positions in one response.
+func (at *AutoTrader) GetTraderSnapshot() (map[string]interface{}, error) {
+	balance, err := at.trader.GetBalance()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get balance: %w", err)
+	}
+
+	rawPositions, err := at.trader.GetPositions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions: %w", err)
+	}
+
+	at.onPositionsUpdatedRaw(rawPositions, "account_snapshot", nil)
+
+	snapshot := at.buildAccountInfoFromData(balance, rawPositions)
+	snapshot["positions"] = at.formatPositionsForAPI(rawPositions)
+	return snapshot, nil
+}
+
+func (at *AutoTrader) buildAccountInfoFromData(balance map[string]interface{}, positions []map[string]interface{}) map[string]interface{} {
 	totalWalletBalance := 0.0
 	totalUnrealizedProfit := 0.0
 	availableBalance := 0.0
@@ -117,18 +146,10 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		availableBalance = avail
 	}
 
-	// Use totalEquity directly if provided by trader (more accurate)
 	if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
 		totalEquity = eq
 	} else {
-		// Fallback: Total Equity = Wallet balance + Unrealized profit
 		totalEquity = totalWalletBalance + totalUnrealizedProfit
-	}
-
-	// Get positions to calculate total margin
-	positions, err := at.trader.GetPositions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get positions: %w", err)
 	}
 
 	totalMarginUsed := 0.0
@@ -150,10 +171,8 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		totalMarginUsed += marginUsed
 	}
 
-	// Verify unrealized P&L consistency (API value vs calculated from positions)
-	// Note: Lighter API may return 0 for unrealized PnL, this is a known limitation
 	diff := math.Abs(totalUnrealizedProfit - totalUnrealizedPnLCalculated)
-	if diff > 5.0 { // Only warn if difference is significant (> 5 USDT)
+	if diff > 5.0 {
 		logger.Infof("⚠️ Unrealized P&L inconsistency (Lighter API limitation): API=%.4f, Calculated=%.4f, Diff=%.4f",
 			totalUnrealizedProfit, totalUnrealizedPnLCalculated, diff)
 	}
@@ -172,23 +191,18 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
-		// Core fields
-		"total_equity":      totalEquity,           // Account equity = wallet + unrealized
-		"wallet_balance":    totalWalletBalance,    // Wallet balance (excluding unrealized P&L)
-		"unrealized_profit": totalUnrealizedProfit, // Unrealized P&L (official value from exchange API)
-		"available_balance": availableBalance,      // Available balance
-
-		// P&L statistics
-		"total_pnl":       totalPnL,          // Total P&L = equity - initial
-		"total_pnl_pct":   totalPnLPct,       // Total P&L percentage
-		"initial_balance": at.initialBalance, // Initial balance
-		"daily_pnl":       at.dailyPnL,       // Daily P&L
-
-		// Position information
-		"position_count":  len(positions),  // Position count
-		"margin_used":     totalMarginUsed, // Margin used
-		"margin_used_pct": marginUsedPct,   // Margin usage rate
-	}, nil
+		"total_equity":      totalEquity,
+		"wallet_balance":    totalWalletBalance,
+		"unrealized_profit": totalUnrealizedProfit,
+		"available_balance": availableBalance,
+		"total_pnl":         totalPnL,
+		"total_pnl_pct":     totalPnLPct,
+		"initial_balance":   at.initialBalance,
+		"daily_pnl":         at.dailyPnL,
+		"position_count":    len(positions),
+		"margin_used":       totalMarginUsed,
+		"margin_used_pct":   marginUsedPct,
+	}
 }
 
 // GetPositions gets position list (for API)
@@ -198,6 +212,10 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get positions: %w", err)
 	}
 
+	return at.formatPositionsForAPI(positions), nil
+}
+
+func (at *AutoTrader) formatPositionsForAPI(positions []map[string]interface{}) []map[string]interface{} {
 	var result []map[string]interface{}
 	for _, pos := range positions {
 		symbol := pos["symbol"].(string)
@@ -282,10 +300,8 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		return ai < aj
 	})
 
-	return result, nil
+	return result
 }
-
-// recordAndConfirmOrder polls order status for actual fill data and records position
 // action: open_long, open_short, close_long, close_short
 // entryPrice: entry price when closing (0 when opening)
 func (at *AutoTrader) recordAndConfirmOrder(orderResult map[string]interface{}, symbol, action string, quantity float64, price float64, leverage int, entryPrice float64) {

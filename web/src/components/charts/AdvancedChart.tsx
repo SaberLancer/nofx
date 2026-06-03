@@ -21,6 +21,9 @@ import {
 } from '../../utils/indicators'
 import { Settings, BarChart2 } from 'lucide-react'
 
+// Default number of candles shown on first load / symbol change
+const DEFAULT_VISIBLE_BARS = 80
+
 // Order marker interface
 interface OrderMarker {
   time: number
@@ -122,6 +125,7 @@ export function AdvancedChart({
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false)
   const [showOrderMarkers, setShowOrderMarkers] = useState(true) // Order marker toggle, default on
   const isInitialLoadRef = useRef(true) // Track if this is initial load
+  const latestKlineDataRef = useRef<Kline[]>([])
   const [tooltipData, setTooltipData] = useState<any>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
 
@@ -138,7 +142,7 @@ export function AdvancedChart({
 
   // Indicator configuration
   const [indicators, setIndicators] = useState<IndicatorConfig[]>([
-    { id: 'volume', name: 'Volume', enabled: true, color: '#3B82F6' },
+    { id: 'volume', name: 'Volume', enabled: false, color: '#3B82F6' },
     { id: 'ma5', name: 'MA5', enabled: false, color: '#FF6B6B', params: { period: 5 } },
     { id: 'ma10', name: 'MA10', enabled: false, color: '#4ECDC4', params: { period: 10 } },
     { id: 'ma20', name: 'MA20', enabled: false, color: '#FFD93D', params: { period: 20 } },
@@ -147,6 +151,93 @@ export function AdvancedChart({
     { id: 'ema26', name: 'EMA26', enabled: false, color: '#FFD3B6', params: { period: 26 } },
     { id: 'bb', name: 'Bollinger Bands', enabled: false, color: '#9B59B6' },
   ])
+  const indicatorsRef = useRef(indicators)
+  indicatorsRef.current = indicators
+
+  const applyVolumeIndicator = (klineData: Kline[], indicatorList: IndicatorConfig[] = indicatorsRef.current) => {
+    if (!volumeSeriesRef.current) return
+
+    const volumeEnabled = indicatorList.find(i => i.id === 'volume')?.enabled
+    if (volumeEnabled) {
+      const volumeData = klineData.map((k: Kline) => ({
+        time: k.time,
+        value: k.volume || 0,
+        color: k.close >= k.open ? 'rgba(14, 203, 129, 0.5)' : 'rgba(246, 70, 93, 0.5)',
+      }))
+      volumeSeriesRef.current.setData(volumeData)
+    } else {
+      volumeSeriesRef.current.setData([])
+    }
+  }
+
+  const updateIndicators = (klineData: Kline[], indicatorList: IndicatorConfig[] = indicatorsRef.current) => {
+    if (!chartRef.current) return
+
+    // Clear old indicators
+    indicatorSeriesRef.current.forEach(series => {
+      chartRef.current?.removeSeries(series as any)
+    })
+    indicatorSeriesRef.current.clear()
+
+    // Add enabled indicators
+    indicatorList.forEach(indicator => {
+      if (!indicator.enabled || !chartRef.current) return
+
+      if (indicator.id.startsWith('ma')) {
+        const maData = calculateSMA(klineData, indicator.params.period)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: indicator.color,
+          lineWidth: 2,
+          title: indicator.name,
+        })
+        series.setData(maData as any)
+        indicatorSeriesRef.current.set(indicator.id, series)
+      } else if (indicator.id.startsWith('ema')) {
+        const emaData = calculateEMA(klineData, indicator.params.period)
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: indicator.color,
+          lineWidth: 2,
+          title: indicator.name,
+          lineStyle: 2, // dashed
+        })
+        series.setData(emaData as any)
+        indicatorSeriesRef.current.set(indicator.id, series)
+      } else if (indicator.id === 'bb') {
+        const bbData = calculateBollingerBands(klineData)
+
+        const upperSeries = chartRef.current.addSeries(LineSeries, {
+          color: indicator.color,
+          lineWidth: 1,
+          title: 'BB Upper',
+        })
+        upperSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.upper })))
+
+        const middleSeries = chartRef.current.addSeries(LineSeries, {
+          color: indicator.color,
+          lineWidth: 1,
+          lineStyle: 2,
+          title: 'BB Middle',
+        })
+        middleSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.middle })))
+
+        const lowerSeries = chartRef.current.addSeries(LineSeries, {
+          color: indicator.color,
+          lineWidth: 1,
+          title: 'BB Lower',
+        })
+        lowerSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.lower })))
+
+        indicatorSeriesRef.current.set(indicator.id + '_upper', upperSeries)
+        indicatorSeriesRef.current.set(indicator.id + '_middle', middleSeries)
+        indicatorSeriesRef.current.set(indicator.id + '_lower', lowerSeries)
+      }
+    })
+  }
+
+  const applyIndicatorOverlay = (klineData: Kline[]) => {
+    applyVolumeIndicator(klineData)
+    updateIndicators(klineData)
+  }
 
   // Fetch kline data from service
   const fetchKlineData = async (symbol: string, interval: string) => {
@@ -533,6 +624,7 @@ export function AdvancedChart({
         // 1. Fetch kline data
         const klineData = await fetchKlineData(symbol, interval)
         console.log('[AdvancedChart] Loaded', klineData.length, 'klines')
+        latestKlineDataRef.current = klineData
         candlestickSeriesRef.current.setData(klineData)
 
         // Store volume/quoteVolume data for tooltip
@@ -572,26 +664,10 @@ export function AdvancedChart({
           })
         }
 
-        // 2. Display volume
-        if (volumeSeriesRef.current) {
-          const volumeEnabled = indicators.find(i => i.id === 'volume')?.enabled
-          if (volumeEnabled) {
-            const volumeData = klineData.map((k: Kline) => ({
-              time: k.time,
-              value: k.volume || 0,
-              color: k.close >= k.open ? 'rgba(14, 203, 129, 0.5)' : 'rgba(246, 70, 93, 0.5)',
-            }))
-            volumeSeriesRef.current.setData(volumeData)
-          } else {
-            // Clear data when volume is disabled
-            volumeSeriesRef.current.setData([])
-          }
-        }
+        // 2. Display volume + line indicators
+        applyIndicatorOverlay(klineData)
 
-        // 3. Add indicators
-        updateIndicators(klineData)
-
-        // 4. Fetch and display order markers
+        // 3. Fetch and display order markers
         if (traderID && candlestickSeriesRef.current) {
           console.log('[AdvancedChart] Starting to fetch orders...')
           const orders = await fetchOrders(traderID, symbol)
@@ -728,9 +804,16 @@ export function AdvancedChart({
           })
         }
 
-        // Auto-fit view only on initial load, avoid jitter on refresh
+        // Show recent candles on initial load (barSpacing applies; no fitContent squeeze)
         if (isInitialLoadRef.current) {
-          chartRef.current?.timeScale().fitContent()
+          const barCount = klineData.length
+          if (barCount > 0 && chartRef.current) {
+            const visible = Math.min(DEFAULT_VISIBLE_BARS, barCount)
+            chartRef.current.timeScale().setVisibleLogicalRange({
+              from: barCount - visible,
+              to: barCount,
+            })
+          }
           isInitialLoadRef.current = false
         }
         setLoading(false)
@@ -747,6 +830,12 @@ export function AdvancedChart({
     const refreshInterval = setInterval(() => loadData(true), 5000)
     return () => clearInterval(refreshInterval)
   }, [symbol, interval, traderID, exchange])
+
+  // Re-apply indicators immediately when user toggles checkboxes
+  useEffect(() => {
+    if (latestKlineDataRef.current.length === 0) return
+    applyIndicatorOverlay(latestKlineDataRef.current)
+  }, [indicators])
 
   // Refresh open order price lines separately (every 60s, avoid frequent exchange API calls)
   useEffect(() => {
@@ -841,71 +930,6 @@ export function AdvancedChart({
       console.error('[AdvancedChart] ❌ Failed to toggle markers:', err)
     }
   }, [showOrderMarkers])
-
-  // Update indicators
-  const updateIndicators = (klineData: Kline[]) => {
-    if (!chartRef.current) return
-
-    // Clear old indicators
-    indicatorSeriesRef.current.forEach(series => {
-      chartRef.current?.removeSeries(series as any)
-    })
-    indicatorSeriesRef.current.clear()
-
-    // Add enabled indicators
-    indicators.forEach(indicator => {
-      if (!indicator.enabled || !chartRef.current) return
-
-      if (indicator.id.startsWith('ma')) {
-        const maData = calculateSMA(klineData, indicator.params.period)
-        const series = chartRef.current.addSeries(LineSeries, {
-          color: indicator.color,
-          lineWidth: 2,
-          title: indicator.name,
-        })
-        series.setData(maData as any)
-        indicatorSeriesRef.current.set(indicator.id, series)
-      } else if (indicator.id.startsWith('ema')) {
-        const emaData = calculateEMA(klineData, indicator.params.period)
-        const series = chartRef.current.addSeries(LineSeries, {
-          color: indicator.color,
-          lineWidth: 2,
-          title: indicator.name,
-          lineStyle: 2, // dashed
-        })
-        series.setData(emaData as any)
-        indicatorSeriesRef.current.set(indicator.id, series)
-      } else if (indicator.id === 'bb') {
-        const bbData = calculateBollingerBands(klineData)
-
-        const upperSeries = chartRef.current.addSeries(LineSeries, {
-          color: indicator.color,
-          lineWidth: 1,
-          title: 'BB Upper',
-        })
-        upperSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.upper })))
-
-        const middleSeries = chartRef.current.addSeries(LineSeries, {
-          color: indicator.color,
-          lineWidth: 1,
-          lineStyle: 2,
-          title: 'BB Middle',
-        })
-        middleSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.middle })))
-
-        const lowerSeries = chartRef.current.addSeries(LineSeries, {
-          color: indicator.color,
-          lineWidth: 1,
-          title: 'BB Lower',
-        })
-        lowerSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.lower })))
-
-        indicatorSeriesRef.current.set(indicator.id + '_upper', upperSeries)
-        indicatorSeriesRef.current.set(indicator.id + '_middle', middleSeries)
-        indicatorSeriesRef.current.set(indicator.id + '_lower', lowerSeries)
-      }
-    })
-  }
 
   // Toggle indicator
   const toggleIndicator = (id: string) => {

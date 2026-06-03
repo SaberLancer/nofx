@@ -38,7 +38,6 @@ import type {
   AccountInfo,
   DecisionRecord,
   Exchange,
-  Position,
   Statistics,
   SystemStatus,
   TraderInfo,
@@ -235,14 +234,12 @@ function DashboardRoute() {
   const selectedTraderSlug = searchParams.get('trader') || undefined
   const [selectedTraderId, setSelectedTraderId] = useState<string | undefined>()
   const [lastUpdate, setLastUpdate] = useState<string>('--:--:--')
-  const [decisionsLimit, setDecisionsLimit] = useState(5)
+  const [decisionsLimit, setDecisionsLimit] = useState(20)
   const [accountPollOff, setAccountPollOff] = useState(false)
-  const [positionsPollOff, setPositionsPollOff] = useState(false)
   const [decisionsPollOff, setDecisionsPollOff] = useState(false)
 
   useEffect(() => {
     setAccountPollOff(false)
-    setPositionsPollOff(false)
     setDecisionsPollOff(false)
   }, [selectedTraderId])
 
@@ -283,13 +280,15 @@ function DashboardRoute() {
     }
   }, [selectedTraderId, selectedTraderSlug, traders])
 
+  const dashboardPollMs = 5000
+
   const { data: status } = useSWR<SystemStatus>(
     selectedTraderId ? `status-${selectedTraderId}` : null,
     () => api.getStatus(selectedTraderId, true),
     {
-      refreshInterval: 15000,
+      refreshInterval: dashboardPollMs,
       revalidateOnFocus: false,
-      dedupingInterval: 10000,
+      dedupingInterval: 0,
     }
   )
 
@@ -297,9 +296,9 @@ function DashboardRoute() {
     selectedTraderId ? `account-${selectedTraderId}` : null,
     () => api.getAccount(selectedTraderId, true),
     {
-      refreshInterval: accountPollOff ? 0 : 15000,
+      refreshInterval: accountPollOff ? 0 : dashboardPollMs,
       revalidateOnFocus: false,
-      dedupingInterval: 10000,
+      dedupingInterval: 0,
       onErrorRetry: (_err, _key, _config, revalidate, { retryCount }) => {
         if (retryCount >= 2) {
           setAccountPollOff(true)
@@ -315,27 +314,7 @@ function DashboardRoute() {
     }
   )
 
-  const { data: positions } = useSWR<Position[]>(
-    selectedTraderId ? `positions-${selectedTraderId}` : null,
-    () => api.getPositions(selectedTraderId, true),
-    {
-      refreshInterval: positionsPollOff ? 0 : 15000,
-      revalidateOnFocus: false,
-      dedupingInterval: 10000,
-      onErrorRetry: (_err, _key, _config, revalidate, { retryCount }) => {
-        if (retryCount >= 2) {
-          setPositionsPollOff(true)
-          return
-        }
-        setTimeout(() => revalidate({ retryCount }), 500)
-      },
-      onSuccess: () => {
-        if (positionsPollOff) {
-          setPositionsPollOff(false)
-        }
-      },
-    }
-  )
+  const positions = account?.positions
 
   const { data: decisions } = useSWR<DecisionRecord[]>(
     selectedTraderId
@@ -343,9 +322,9 @@ function DashboardRoute() {
       : null,
     () => api.getLatestDecisions(selectedTraderId, decisionsLimit, true),
     {
-      refreshInterval: decisionsPollOff ? 0 : 30000,
+      refreshInterval: decisionsPollOff ? 0 : 15000,
       revalidateOnFocus: false,
-      dedupingInterval: 20000,
+      dedupingInterval: 10000,
       onErrorRetry: (_err, _key, _config, revalidate, { retryCount }) => {
         if (retryCount >= 2) {
           setDecisionsPollOff(true)
@@ -389,7 +368,7 @@ function DashboardRoute() {
         account={account}
         accountFailed={accountPollOff}
         positions={positions}
-        positionsFailed={positionsPollOff}
+        positionsFailed={accountPollOff}
         decisions={decisions}
         decisionsFailed={decisionsPollOff}
         decisionsLimit={decisionsLimit}

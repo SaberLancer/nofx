@@ -182,6 +182,7 @@ func (s *Server) handleClosePosition(c *gin.Context) {
 			string(exchangeCfg.APIKey),
 			string(exchangeCfg.SecretKey),
 			string(exchangeCfg.Passphrase),
+			exchangeCfg.Testnet,
 		)
 	case "bitget":
 		tempTrader = bitget.NewBitgetTrader(

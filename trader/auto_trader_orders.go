@@ -6,6 +6,7 @@ import (
 	"nofx/logger"
 	"nofx/market"
 	"nofx/store"
+	"strings"
 	"time"
 )
 
@@ -250,16 +251,29 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 	return nil
 }
 
+func codeEnforcedClosePrice(decision *kernel.Decision) (float64, bool) {
+	if decision == nil || decision.Price <= 0 {
+		return 0, false
+	}
+	if strings.Contains(decision.Reasoning, "[CODE ENFORCED PnL]") {
+		return decision.Price, true
+	}
+	return 0, false
+}
+
 // executeCloseLongWithRecord executes close long position and records detailed information
 func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
 	logger.Infof("  🔄 Close long: %s", decision.Symbol)
 
-	// Get current price
-	marketData, err := market.GetWithExchange(decision.Symbol, at.exchange)
-	if err != nil {
-		return err
+	if px, ok := codeEnforcedClosePrice(decision); ok {
+		actionRecord.Price = px
+	} else {
+		marketData, err := market.GetWithExchange(decision.Symbol, at.exchange)
+		if err != nil {
+			return err
+		}
+		actionRecord.Price = marketData.CurrentPrice
 	}
-	actionRecord.Price = marketData.CurrentPrice
 
 	// Normalize symbol for database lookup
 	normalizedSymbol := market.Normalize(decision.Symbol)
@@ -318,7 +332,7 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 
 	// Record order to database and poll for confirmation
 	closedQty := quantityOrDefault(closeQty, quantity)
-	at.recordAndConfirmOrder(order, decision.Symbol, "close_long", closedQty, marketData.CurrentPrice, 0, entryPrice)
+	at.recordAndConfirmOrder(order, decision.Symbol, "close_long", closedQty, actionRecord.Price, 0, entryPrice)
 
 	if closedQty >= quantity*0.999 || quantity <= 0 {
 		at.clearUnprotected(decision.Symbol, "long")
@@ -333,12 +347,15 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
 	logger.Infof("  🔄 Close short: %s", decision.Symbol)
 
-	// Get current price
-	marketData, err := market.GetWithExchange(decision.Symbol, at.exchange)
-	if err != nil {
-		return err
+	if px, ok := codeEnforcedClosePrice(decision); ok {
+		actionRecord.Price = px
+	} else {
+		marketData, err := market.GetWithExchange(decision.Symbol, at.exchange)
+		if err != nil {
+			return err
+		}
+		actionRecord.Price = marketData.CurrentPrice
 	}
-	actionRecord.Price = marketData.CurrentPrice
 
 	// Normalize symbol for database lookup
 	normalizedSymbol := market.Normalize(decision.Symbol)
@@ -402,7 +419,7 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 
 	// Record order to database and poll for confirmation
 	closedQty := quantityOrDefault(closeQty, quantity)
-	at.recordAndConfirmOrder(order, decision.Symbol, "close_short", closedQty, marketData.CurrentPrice, 0, entryPrice)
+	at.recordAndConfirmOrder(order, decision.Symbol, "close_short", closedQty, actionRecord.Price, 0, entryPrice)
 
 	if closedQty >= quantity*0.999 || quantity <= 0 {
 		at.clearUnprotected(decision.Symbol, "short")

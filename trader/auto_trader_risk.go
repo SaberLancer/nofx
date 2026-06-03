@@ -4,47 +4,7 @@ import (
 	"fmt"
 	"nofx/logger"
 	"strings"
-	"time"
 )
-
-// startDrawdownMonitor starts drawdown monitoring
-func (at *AutoTrader) startDrawdownMonitor() {
-	at.monitorWg.Add(1)
-	go func() {
-		defer at.monitorWg.Done()
-
-		ticker := time.NewTicker(1 * time.Minute) // Check every minute
-		defer ticker.Stop()
-
-		logger.Info("📊 Started position PnL% enforcement monitoring (check every minute)")
-
-		for {
-			select {
-			case <-ticker.C:
-				at.checkPositionDrawdown()
-			case <-at.stopMonitorCh:
-				logger.Info("⏹ Stopped position drawdown monitoring")
-				return
-			}
-		}
-	}()
-}
-
-// checkPositionDrawdown runs strategy Margin PnL% enforcement between AI cycles.
-func (at *AutoTrader) checkPositionDrawdown() {
-	infos, err := at.positionInfosForPnLEnforce()
-	if err != nil {
-		logger.Infof("❌ PnL monitoring: failed to get positions: %v", err)
-		return
-	}
-	at.strategyMu.RLock()
-	engine := at.strategyEngine
-	at.strategyMu.RUnlock()
-	if engine == nil || at.isGridTradingMode() {
-		return
-	}
-	at.enforcePositionPnLRulesFromPositions(infos, engine.GetRiskControlConfig(), nil)
-}
 
 // emergencyClosePosition emergency close position function
 func (at *AutoTrader) emergencyClosePosition(symbol, side string) error {
@@ -81,30 +41,63 @@ func (at *AutoTrader) GetPeakPnLCache() map[string]float64 {
 	return cache
 }
 
-// UpdatePeakPnL updates peak profit cache
-func (at *AutoTrader) UpdatePeakPnL(symbol, side string, currentPnLPct float64) {
+func peakCacheKey(symbol, side string) string {
+	return symbol + "_" + strings.ToLower(strings.TrimSpace(side))
+}
+
+// loadPeakPnLFromStore hydrates in-memory peak cache from open positions in DB (survives restarts).
+func (at *AutoTrader) loadPeakPnLFromStore() {
+	if at.store == nil {
+		return
+	}
+	positions, err := at.store.Position().GetOpenPositions(at.id)
+	if err != nil {
+		at.logWarnf("⚠️ Failed to load peak PnL from store: %v", err)
+		return
+	}
 	at.peakPnLCacheMutex.Lock()
 	defer at.peakPnLCacheMutex.Unlock()
-
-	posKey := symbol + "_" + side
-	if peak, exists := at.peakPnLCache[posKey]; exists {
-		// Update peak (if long, take larger value; if short, currentPnLPct is negative, also compare)
-		if currentPnLPct > peak {
-			at.peakPnLCache[posKey] = currentPnLPct
+	for _, pos := range positions {
+		if pos == nil || pos.PeakPnLPct == 0 {
+			continue
 		}
-	} else {
-		// First time recording
-		at.peakPnLCache[posKey] = currentPnLPct
+		key := peakCacheKey(pos.Symbol, pos.Side)
+		if pos.PeakPnLPct > at.peakPnLCache[key] {
+			at.peakPnLCache[key] = pos.PeakPnLPct
+		}
 	}
 }
 
-// ClearPeakPnLCache clears peak cache for specified position
+// UpdatePeakPnL updates peak profit on every PnL sample (no spike filtering). Persists to DB; cleared only on full close.
+func (at *AutoTrader) UpdatePeakPnL(symbol, side string, currentPnLPct float64) {
+	posKey := peakCacheKey(symbol, side)
+
+	at.peakPnLCacheMutex.Lock()
+	defer at.peakPnLCacheMutex.Unlock()
+
+	peak := at.peakPnLCache[posKey]
+	if currentPnLPct > peak {
+		peak = currentPnLPct
+	}
+
+	if at.store != nil {
+		storedPeak, err := at.store.Position().SyncOpenPositionPeakPnLPct(at.id, symbol, side, currentPnLPct)
+		if err != nil {
+			at.logWarnf("⚠️ Failed to persist peak PnL for %s %s: %v", symbol, side, err)
+		} else if storedPeak > peak {
+			peak = storedPeak
+		}
+	}
+
+	at.peakPnLCache[posKey] = peak
+}
+
+// ClearPeakPnLCache clears in-memory peak cache after a full close (DB peak remains on the closed row).
 func (at *AutoTrader) ClearPeakPnLCache(symbol, side string) {
 	at.peakPnLCacheMutex.Lock()
 	defer at.peakPnLCacheMutex.Unlock()
 
-	posKey := symbol + "_" + side
-	delete(at.peakPnLCache, posKey)
+	delete(at.peakPnLCache, peakCacheKey(symbol, side))
 }
 
 // ============================================================================

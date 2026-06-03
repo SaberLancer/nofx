@@ -145,20 +145,25 @@ func (s *Server) handleAccount(c *gin.Context) {
 		return
 	}
 
-	logger.Infof("📊 Received account info request [%s]", trader.GetName())
-	account, err := trader.GetAccountInfo()
+	logger.Infof("📊 Received account snapshot request [%s]", trader.GetName())
+	snapshot, err := trader.GetTraderSnapshot()
 	if err != nil {
-		SafeInternalError(c, "Get account info", err)
+		SafeInternalError(c, "Get account snapshot", err)
 		return
 	}
 
-	logger.Infof("✓ Returning account info [%s]: equity=%.2f, available=%.2f, pnl=%.2f (%.2f%%)",
+	positionCount := 0
+	if positions, ok := snapshot["positions"].([]map[string]interface{}); ok {
+		positionCount = len(positions)
+	}
+	logger.Infof("✓ Returning account snapshot [%s]: equity=%.2f, available=%.2f, pnl=%.2f (%.2f%%), positions=%d",
 		trader.GetName(),
-		account["total_equity"],
-		account["available_balance"],
-		account["total_pnl"],
-		account["total_pnl_pct"])
-	c.JSON(http.StatusOK, account)
+		snapshot["total_equity"],
+		snapshot["available_balance"],
+		snapshot["total_pnl"],
+		snapshot["total_pnl_pct"],
+		positionCount)
+	c.JSON(http.StatusOK, snapshot)
 }
 
 // handlePositions Position list

@@ -21,7 +21,7 @@ export function PositionsPanel() {
   const { data: positions, mutate: mutatePositions } = useSWR<Position[]>(
     traderId ? `agent-positions-${traderId}` : null,
     () => api.getPositions(traderId),
-    { refreshInterval: 15000, shouldRetryOnError: false }
+    { refreshInterval: 5000, shouldRetryOnError: false }
   )
 
   useEffect(() => {

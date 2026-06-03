@@ -761,9 +761,9 @@ export function PositionHistory({ traderId, openPositionCount, openPositionsKey 
     traderId ? [positionHistorySWRKey(traderId), historyFetchLimit] : null,
     ([, limit]) => api.getPositionHistory(traderId, limit as number, true),
     {
-      refreshInterval: 15000,
+      refreshInterval: 5000,
       revalidateOnFocus: true,
-      dedupingInterval: 5000,
+      dedupingInterval: 0,
     }
   )
 

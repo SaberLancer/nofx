@@ -73,6 +73,7 @@ type AutoTraderConfig struct {
 	OKXAPIKey     string
 	OKXSecretKey  string
 	OKXPassphrase string
+	OKXTestnet    bool
 
 	// Bitget API configuration
 	BitgetAPIKey     string
@@ -182,6 +183,9 @@ type AutoTrader struct {
 	peakPnLCacheMutex     sync.RWMutex       // Cache read-write lock
 	pnlEnforceTier        map[string]int     // Highest auto lock-profit tier applied (symbol_side -> tier)
 	pnlEnforceTierMu      sync.RWMutex
+	pnlEnforceCheckMu     sync.Mutex
+	lastPositionsEnforceFP string
+	lastPositionsEnforceAt time.Time
 	lastBalanceSyncTime   time.Time          // Last balance sync time
 	userID                string             // User ID
 	gridState             *GridState         // Grid trading state (only used when StrategyType == "grid_trading")
@@ -284,7 +288,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		trader = bybit.NewBybitTrader(config.BybitAPIKey, config.BybitSecretKey)
 	case "okx":
 		logger.Infof("🏦 [%s] Using OKX Futures trading", config.Name)
-		trader = okx.NewOKXTrader(config.OKXAPIKey, config.OKXSecretKey, config.OKXPassphrase)
+		trader = okx.NewOKXTrader(config.OKXAPIKey, config.OKXSecretKey, config.OKXPassphrase, config.OKXTestnet)
 	case "bitget":
 		logger.Infof("🏦 [%s] Using Bitget Futures trading", config.Name)
 		trader = bitget.NewBitgetTrader(config.BitgetAPIKey, config.BitgetSecretKey, config.BitgetPassphrase)
@@ -425,6 +429,7 @@ func (at *AutoTrader) Run() error {
 	at.startTime = time.Now()
 
 	logger.Info("🚀 AI-driven automatic trading system started")
+	at.loadPeakPnLFromStore()
 	at.logInfof("💰 Initial balance: %.2f USDT", at.initialBalance)
 	at.logInfof("⚙️  Scan interval: %v", at.config.ScanInterval)
 	logger.Info("🤖 AI will make full decisions on leverage, position size, stop loss/take profit, etc.")
@@ -433,9 +438,6 @@ func (at *AutoTrader) Run() error {
 	at.runPreLaunchChecks()
 	at.monitorWg.Add(1)
 	defer at.monitorWg.Done()
-
-	// Start drawdown monitoring
-	at.startDrawdownMonitor()
 
 	// Start tick-based pre-decision trend monitor (gates AI when enabled)
 	at.startPreDecisionMonitor()

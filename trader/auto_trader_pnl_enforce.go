@@ -5,6 +5,7 @@ import (
 	"nofx/kernel"
 	"nofx/logger"
 	"nofx/store"
+	"strings"
 	"time"
 )
 
@@ -65,13 +66,8 @@ func evaluatePositionPnLAction(pnl, peak float64, appliedTier int, rc store.Risk
 	return pnlEnforcePlan{}, false
 }
 
-// positionInfosForPnLEnforce builds Margin PnL% position snapshots from the exchange.
-func (at *AutoTrader) positionInfosForPnLEnforce() ([]kernel.PositionInfo, error) {
-	positions, err := at.trader.GetPositions()
-	if err != nil {
-		return nil, err
-	}
-
+// positionInfosFromRaw builds Margin PnL% snapshots from exchange position maps.
+func (at *AutoTrader) positionInfosFromRaw(positions []map[string]interface{}) []kernel.PositionInfo {
 	var infos []kernel.PositionInfo
 	for _, pos := range positions {
 		symbol := pos["symbol"].(string)
@@ -116,7 +112,75 @@ func (at *AutoTrader) positionInfosForPnLEnforce() ([]kernel.PositionInfo, error
 			MarginUsed:       marginUsed,
 		})
 	}
-	return infos, nil
+	return infos
+}
+
+// positionInfosForPnLEnforce builds Margin PnL% position snapshots from the exchange.
+func (at *AutoTrader) positionInfosForPnLEnforce() ([]kernel.PositionInfo, error) {
+	positions, err := at.trader.GetPositions()
+	if err != nil {
+		return nil, err
+	}
+	return at.positionInfosFromRaw(positions), nil
+}
+
+func positionsEnforceFingerprint(infos []kernel.PositionInfo) string {
+	var b strings.Builder
+	for _, p := range infos {
+		fmt.Fprintf(&b, "%s|%s|%.6f|%.4f|%.2f;", p.Symbol, p.Side, p.Quantity, p.MarkPrice, p.UnrealizedPnLPct)
+	}
+	return b.String()
+}
+
+// onPositionsUpdated runs code-enforced PnL rules when live positions were just refreshed.
+// Returns how many positions were acted on.
+func (at *AutoTrader) onPositionsUpdated(infos []kernel.PositionInfo, source string, record *store.DecisionRecord) int {
+	at.isRunningMutex.RLock()
+	running := at.isRunning
+	at.isRunningMutex.RUnlock()
+	if !running {
+		return 0
+	}
+
+	at.strategyMu.RLock()
+	engine := at.strategyEngine
+	at.strategyMu.RUnlock()
+	if engine == nil || at.isGridTradingMode() {
+		return 0
+	}
+
+	fp := positionsEnforceFingerprint(infos)
+	at.pnlEnforceCheckMu.Lock()
+	if fp == at.lastPositionsEnforceFP && time.Since(at.lastPositionsEnforceAt) < 800*time.Millisecond {
+		at.pnlEnforceCheckMu.Unlock()
+		return 0
+	}
+	at.lastPositionsEnforceFP = fp
+	at.lastPositionsEnforceAt = time.Now()
+	at.pnlEnforceCheckMu.Unlock()
+
+	if record == nil {
+		record = &store.DecisionRecord{
+			ExecutionLog: []string{fmt.Sprintf("[PnL on position update] source=%s", source)},
+			Success:      true,
+		}
+	} else if source != "" {
+		record.ExecutionLog = append(record.ExecutionLog,
+			fmt.Sprintf("[PnL on position update] source=%s", source))
+	}
+
+	acted := at.enforcePositionPnLRulesFromPositions(infos, engine.GetRiskControlConfig(), record)
+	if acted > 0 && record != nil && source != "ai_cycle" {
+		if err := at.saveDecision(record); err != nil {
+			at.logWarnf("⚠️ PnL enforce acted (%s) but failed to save decision: %v", source, err)
+		}
+	}
+	return acted
+}
+
+// onPositionsUpdatedRaw is a convenience wrapper for exchange position maps.
+func (at *AutoTrader) onPositionsUpdatedRaw(positions []map[string]interface{}, source string, record *store.DecisionRecord) int {
+	return at.onPositionsUpdated(at.positionInfosFromRaw(positions), source, record)
 }
 
 func (at *AutoTrader) isGridTradingMode() bool {
@@ -125,7 +189,7 @@ func (at *AutoTrader) isGridTradingMode() bool {
 }
 
 func (at *AutoTrader) pnlEnforcePosKey(symbol, side string) string {
-	return symbol + "_" + side
+	return peakCacheKey(symbol, side)
 }
 
 func (at *AutoTrader) getPnLEnforceTier(posKey string) int {
@@ -202,6 +266,7 @@ func (at *AutoTrader) enforcePositionPnLRulesFromPositions(positions []kernel.Po
 			Symbol:     pos.Symbol,
 			Action:     action,
 			CloseRatio: plan.CloseRatio,
+			Price:      pos.MarkPrice, // fast path: skip slow market fetch for code-enforced closes
 			Reasoning:  reason,
 		}
 
@@ -248,7 +313,7 @@ func (at *AutoTrader) refreshTradingContextAfterPnLEnforce(acted int, record *st
 	if acted <= 0 {
 		return nil, fmt.Errorf("no PnL enforce actions to refresh for")
 	}
-	fresh, err := at.buildTradingContext()
+	fresh, _, err := at.buildTradingContext(nil)
 	if err != nil {
 		return nil, err
 	}

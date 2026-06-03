@@ -117,6 +117,7 @@ type TraderPosition struct {
 	FundingFee         float64 `gorm:"-" json:"funding_fee,omitempty"`
 	Leverage           int     `gorm:"column:leverage;default:1" json:"leverage"`
 	Status             string  `gorm:"column:status;default:OPEN;index:idx_positions_status" json:"status"`
+	PeakPnLPct         float64 `gorm:"column:peak_pnl_pct;default:0" json:"peak_pnl_pct"`
 	CloseReason        string  `gorm:"column:close_reason;default:''" json:"close_reason"`
 	Source             string  `gorm:"column:source;default:system" json:"source"`
 	CreatedAt          int64   `gorm:"column:created_at" json:"created_at"`   // Unix milliseconds UTC
@@ -164,6 +165,7 @@ func (s *PositionStore) InitTables() error {
 
 			// Just ensure index exists
 			s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_exchange_pos_unique ON trader_positions(exchange_id, exchange_position_id) WHERE exchange_position_id != ''`)
+			s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN IF NOT EXISTS peak_pnl_pct DOUBLE PRECISION NOT NULL DEFAULT 0`)
 			return nil
 		}
 	}
@@ -350,8 +352,47 @@ func (s *PositionStore) GetOpenPositions(traderID string) ([]*TraderPosition, er
 	return positions, nil
 }
 
+func normalizePositionSide(side string) string {
+	s := strings.ToUpper(strings.TrimSpace(side))
+	switch s {
+	case "LONG", "BUY":
+		return "LONG"
+	case "SHORT", "SELL":
+		return "SHORT"
+	default:
+		return s
+	}
+}
+
+// SyncOpenPositionPeakPnLPct updates peak margin PnL% on the open position row when current exceeds stored peak.
+// Returns the authoritative peak (max of stored and current). No anomaly filtering.
+func (s *PositionStore) SyncOpenPositionPeakPnLPct(traderID, symbol, side string, currentPnLPct float64) (float64, error) {
+	pos, err := s.GetOpenPositionBySymbol(traderID, symbol, side)
+	if err != nil {
+		return 0, err
+	}
+	if pos == nil {
+		return currentPnLPct, nil
+	}
+
+	peak := pos.PeakPnLPct
+	if currentPnLPct <= peak {
+		return peak, nil
+	}
+
+	now := time.Now().UTC().UnixMilli()
+	if err := s.db.Model(&TraderPosition{}).Where("id = ?", pos.ID).Updates(map[string]interface{}{
+		"peak_pnl_pct": currentPnLPct,
+		"updated_at":   now,
+	}).Error; err != nil {
+		return peak, fmt.Errorf("failed to update peak_pnl_pct: %w", err)
+	}
+	return currentPnLPct, nil
+}
+
 // GetOpenPositionBySymbol gets open position for specified symbol and direction
 func (s *PositionStore) GetOpenPositionBySymbol(traderID, symbol, side string) (*TraderPosition, error) {
+	side = normalizePositionSide(side)
 	var pos TraderPosition
 	err := s.db.Where("trader_id = ? AND symbol = ? AND side = ? AND status = ?", traderID, symbol, side, "OPEN").
 		Order("entry_time DESC").

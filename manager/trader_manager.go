@@ -674,6 +674,7 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		traderConfig.OKXAPIKey = string(exchangeCfg.APIKey)
 		traderConfig.OKXSecretKey = string(exchangeCfg.SecretKey)
 		traderConfig.OKXPassphrase = string(exchangeCfg.Passphrase)
+		traderConfig.OKXTestnet = exchangeCfg.Testnet
 	case "bitget":
 		traderConfig.BitgetAPIKey = string(exchangeCfg.APIKey)
 		traderConfig.BitgetSecretKey = string(exchangeCfg.SecretKey)

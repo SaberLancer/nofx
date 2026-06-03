@@ -40,6 +40,7 @@ type OKXTrader struct {
 	apiKey     string
 	secretKey  string
 	passphrase string
+	testnet    bool
 
 	// Margin mode setting used for new orders and leverage changes.
 	isCrossMargin bool
@@ -50,23 +51,10 @@ type OKXTrader struct {
 	// HTTP client (proxy disabled)
 	httpClient *http.Client
 
-	// Balance cache
-	cachedBalance     map[string]interface{}
-	balanceCacheTime  time.Time
-	balanceCacheMutex sync.RWMutex
-
-	// Positions cache
-	cachedPositions     []map[string]interface{}
-	positionsCacheTime  time.Time
-	positionsCacheMutex sync.RWMutex
-
-	// Instrument info cache
+	// Instrument info cache (static contract metadata)
 	instrumentsCache      map[string]*OKXInstrument
 	instrumentsCacheTime  time.Time
 	instrumentsCacheMutex sync.RWMutex
-
-	// Cache duration
-	cacheDuration time.Duration
 }
 
 // OKXInstrument OKX instrument info
@@ -109,7 +97,7 @@ func genOkxClOrdID() string {
 }
 
 // NewOKXTrader creates OKX trader
-func NewOKXTrader(apiKey, secretKey, passphrase string) *OKXTrader {
+func NewOKXTrader(apiKey, secretKey, passphrase string, testnet bool) *OKXTrader {
 	// Use default transport which respects system proxy settings
 	// OKX requires proxy in China due to DNS pollution
 	httpClient := &http.Client{
@@ -121,9 +109,9 @@ func NewOKXTrader(apiKey, secretKey, passphrase string) *OKXTrader {
 		apiKey:           apiKey,
 		secretKey:        secretKey,
 		passphrase:       passphrase,
+		testnet:          testnet,
 		isCrossMargin:    true,
 		httpClient:       httpClient,
-		cacheDuration:    15 * time.Second,
 		instrumentsCache: make(map[string]*OKXInstrument),
 	}
 
@@ -203,8 +191,59 @@ func (t *OKXTrader) sign(timestamp, method, requestPath, body string) string {
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-// doRequest executes HTTP request
+const (
+	okxRequestMaxAttempts = 3
+)
+
+var okxRequestRetryWaits = []time.Duration{
+	400 * time.Millisecond,
+	900 * time.Millisecond,
+}
+
+// okxRetryable returns whether a failed call may be retried safely.
+// POST/PUT are only retried for transport-level failures (not OKX 50004 on orders).
+func okxRetryable(method string, err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "request failed:") {
+		return true
+	}
+	if method != http.MethodGet {
+		return false
+	}
+	return strings.Contains(msg, "code=50004") ||
+		strings.Contains(msg, "code=50011") ||
+		strings.Contains(msg, "code=50013")
+}
+
+// doRequest executes HTTP request with limited retries on transient OKX/read failures.
 func (t *OKXTrader) doRequest(method, path string, body interface{}) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < okxRequestMaxAttempts; attempt++ {
+		if attempt > 0 {
+			wait := okxRequestRetryWaits[attempt-1]
+			if attempt-1 >= len(okxRequestRetryWaits) {
+				wait = okxRequestRetryWaits[len(okxRequestRetryWaits)-1]
+			}
+			logger.Infof("🔄 OKX API retry %d/%d after %v: %s %s", attempt+1, okxRequestMaxAttempts, wait, method, path)
+			time.Sleep(wait)
+		}
+		data, err := t.doRequestOnce(method, path, body)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+		if !okxRetryable(method, err) || attempt == okxRequestMaxAttempts-1 {
+			break
+		}
+	}
+	return nil, lastErr
+}
+
+// doRequestOnce performs a single HTTP round-trip to OKX.
+func (t *OKXTrader) doRequestOnce(method, path string, body interface{}) ([]byte, error) {
 	var bodyBytes []byte
 	var err error
 
@@ -228,8 +267,12 @@ func (t *OKXTrader) doRequest(method, path string, body interface{}) ([]byte, er
 	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
 	req.Header.Set("OK-ACCESS-PASSPHRASE", t.passphrase)
 	req.Header.Set("Content-Type", "application/json")
-	// Set request header，0 means real trading, 1 means simulated trading
-	req.Header.Set("x-simulated-trading", "1")
+	// 0 = live trading, 1 = simulated (demo) trading
+	simulated := "0"
+	if t.testnet {
+		simulated = "1"
+	}
+	req.Header.Set("x-simulated-trading", simulated)
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
