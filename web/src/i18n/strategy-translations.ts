@@ -235,6 +235,11 @@ export const riskControl = {
     en: 'Validated on open (code)',
     es: 'Validado al abrir',
   },
+  systemEnforcedBadge: {
+    zh: '系统强制执行',
+    en: 'System enforced',
+    es: 'Ejecutado por el sistema',
+  },
   enableStopLoss: { zh: '启用止损', en: 'Enable Stop Loss', es: 'Activar Stop Loss' },
   enableStopLossDesc: {
     zh: '关闭后回测与实盘均不执行止损，AI 也无需提供 stop_loss 字段',
@@ -295,7 +300,7 @@ export const preDecision = {
 // PROMPT SECTIONS TRANSLATIONS (12+ keys)
 // ============================================================================
 export const promptSections = {
-  promptSections: { zh: 'System Prompt 自定义', en: 'System Prompt Customization', es: 'Personalización de Prompt' },
+  promptSections: { zh: '提示词自定义', en: 'System Prompt Customization', es: 'Personalización de Prompt' },
   promptSectionsDesc: { zh: '自定义 AI 行为和决策逻辑（输出格式和风控规则不可修改）', en: 'Customize AI behavior and decision logic (output format and risk rules are fixed)', es: 'Personalizar comportamiento AI' },
   roleDefinition: { zh: '角色定义', en: 'Role Definition', es: 'Definición de Rol' },
   roleDefinitionDesc: { zh: '定义 AI 的身份和核心目标', en: 'Define AI identity and core objectives', es: 'Definir identidad AI' },

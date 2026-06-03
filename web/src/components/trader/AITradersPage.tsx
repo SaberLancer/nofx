@@ -607,12 +607,12 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
               <h1 className="text-2xl md:text-3xl font-bold font-mono tracking-tight text-white flex items-center gap-3 uppercase">
                 {t('aiTraders', language)}
                 <span className="text-xs font-mono font-normal px-2 py-0.5 rounded bg-nofx-gold/10 text-nofx-gold border border-nofx-gold/20 tracking-wider">
-                  {traders?.length || 0} ACTIVE_NODES
+                  {t('aiTradersHeader.activeNodes', language, { count: traders?.length || 0 })}
                 </span>
               </h1>
               <p className="text-xs font-mono text-zinc-500 uppercase tracking-widest mt-1 ml-1 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                SYSTEM_READY
+                {t('aiTradersHeader.systemReady', language)}
               </p>
             </div>
           </div>
@@ -624,7 +624,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
             >
               <div className="flex items-center gap-2">
                 <Plus className="w-3 h-3" />
-                <span>MODELS_CONFIG</span>
+                <span>{t('aiTradersHeader.modelsConfig', language)}</span>
               </div>
             </button>
 
@@ -634,7 +634,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
             >
               <div className="flex items-center gap-2">
                 <Plus className="w-3 h-3" />
-                <span>EXCHANGE_KEYS</span>
+                <span>{t('aiTradersHeader.exchangeKeys', language)}</span>
               </div>
             </button>
 
@@ -644,7 +644,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
             >
               <div className="flex items-center gap-2">
                 <MessageCircle className="w-3 h-3" />
-                <span>TELEGRAM_BOT</span>
+                <span>{t('aiTradersHeader.telegramBot', language)}</span>
               </div>
             </button>
 

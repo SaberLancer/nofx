@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { User, Cpu, Building2, MessageCircle, Eye, EyeOff, ChevronRight, Plus, Pencil } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useLanguage } from '../contexts/LanguageContext'
+import { t } from '../i18n/translations'
 import { api } from '../lib/api'
 import { ExchangeConfigModal } from '../components/trader/ExchangeConfigModal'
 import { TelegramConfigModal } from '../components/trader/TelegramConfigModal'
@@ -67,11 +68,11 @@ export function SettingsPage() {
   useEffect(() => {
     if (activeTab === 'models') {
       refreshModelConfigs()
-        .catch(() => toast.error('Failed to load AI models'))
+        .catch(() => toast.error(t('settingsPage.loadModelsFailed', language)))
     }
     if (activeTab === 'exchanges') {
       refreshExchangeConfigs()
-        .catch(() => toast.error('Failed to load exchanges'))
+        .catch(() => toast.error(t('settingsPage.loadExchangesFailed', language)))
     }
   }, [activeTab])
 
@@ -87,7 +88,7 @@ export function SettingsPage() {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
     if (newPassword.length < 8) {
-      toast.error('Password must be at least 8 characters')
+      toast.error(t('settingsPage.passwordMinLength', language))
       return
     }
     setChangingPassword(true)
@@ -104,10 +105,10 @@ export function SettingsPage() {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Failed to update password')
       }
-      toast.success('Password updated successfully')
+      toast.success(t('settingsPage.passwordUpdated', language))
       setNewPassword('')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update password')
+      toast.error(err instanceof Error ? err.message : t('settingsPage.passwordUpdateFailed', language))
     } finally {
       setChangingPassword(false)
     }
@@ -261,21 +262,21 @@ export function SettingsPage() {
       setShowExchangeModal(false)
       setEditingExchange(null)
     } catch {
-      toast.error('Failed to delete exchange account')
+      toast.error(t('settingsPage.deleteExchangeFailed', language))
     }
   }
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: 'account', label: 'Account', icon: <User size={16} /> },
-    { key: 'models', label: 'AI Models', icon: <Cpu size={16} /> },
-    { key: 'exchanges', label: 'Exchanges', icon: <Building2 size={16} /> },
-    { key: 'telegram', label: 'Telegram', icon: <MessageCircle size={16} /> },
+    { key: 'account', label: t('settingsPage.tabAccount', language), icon: <User size={16} /> },
+    { key: 'models', label: t('settingsPage.tabModels', language), icon: <Cpu size={16} /> },
+    { key: 'exchanges', label: t('settingsPage.tabExchanges', language), icon: <Building2 size={16} /> },
+    { key: 'telegram', label: t('settingsPage.tabTelegram', language), icon: <MessageCircle size={16} /> },
   ]
 
   return (
     <div className="min-h-screen pt-20 pb-12 px-4" style={{ background: '#0B0E11' }}>
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-xl font-bold text-white mb-6">Settings</h1>
+        <h1 className="text-xl font-bold text-white mb-6">{t('settingsPage.title', language)}</h1>
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 bg-zinc-900/60 border border-zinc-800 rounded-xl p-1">
@@ -302,22 +303,22 @@ export function SettingsPage() {
           {activeTab === 'account' && (
             <div className="space-y-6">
               <div>
-                <p className="text-xs text-zinc-500 mb-1">Email</p>
+                <p className="text-xs text-zinc-500 mb-1">{t('settingsPage.email', language)}</p>
                 <p className="text-sm text-white font-medium">{user?.email}</p>
               </div>
 
               <div className="border-t border-zinc-800 pt-6">
-                <h3 className="text-sm font-semibold text-white mb-4">Change Password</h3>
+                <h3 className="text-sm font-semibold text-white mb-4">{t('settingsPage.changePassword', language)}</h3>
                 <form onSubmit={handleChangePassword} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-2">New Password</label>
+                    <label className="block text-xs font-medium text-zinc-400 mb-2">{t('settingsPage.newPassword', language)}</label>
                     <div className="relative">
                       <input
                         type={showPassword ? 'text' : 'password'}
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         className="w-full bg-zinc-950/80 border border-zinc-700/80 rounded-xl px-4 py-3 pr-11 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-nofx-gold/60 focus:ring-1 focus:ring-nofx-gold/30 transition-all"
-                        placeholder="At least 8 characters"
+                        placeholder={t('settingsPage.passwordPlaceholder', language)}
                         required
                       />
                       <button
@@ -334,7 +335,7 @@ export function SettingsPage() {
                     disabled={changingPassword || newPassword.length < 8}
                     className="w-full bg-nofx-gold hover:bg-yellow-400 active:scale-[0.98] text-black font-semibold py-3 rounded-xl text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {changingPassword ? 'Updating...' : 'Update Password'}
+                    {changingPassword ? t('settingsPage.updatingPassword', language) : t('settingsPage.updatePassword', language)}
                   </button>
                 </form>
               </div>
@@ -346,20 +347,26 @@ export function SettingsPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-zinc-400">
-                  {configuredModels.length} model{configuredModels.length !== 1 ? 's' : ''} configured
+                  {t(
+                    configuredModels.length === 1
+                      ? 'settingsPage.modelsConfigured'
+                      : 'settingsPage.modelsConfiguredPlural',
+                    language,
+                    { count: configuredModels.length }
+                  )}
                 </p>
                 <button
                   onClick={() => { setEditingModel(null); setShowModelModal(true) }}
                   className="flex items-center gap-1.5 text-xs font-medium bg-nofx-gold/10 hover:bg-nofx-gold/20 text-nofx-gold px-3 py-1.5 rounded-lg transition-colors"
                 >
                   <Plus size={14} />
-                  Add Model
+                  {t('settingsPage.addModel', language)}
                 </button>
               </div>
 
               {configuredModels.length === 0 ? (
                 <div className="text-center py-8 text-zinc-600 text-sm">
-                  No AI models configured yet
+                  {t('settingsPage.noModelsYet', language)}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -380,15 +387,15 @@ export function SettingsPage() {
                             {model.customModelName ? (
                               <span className="text-[11px] text-zinc-500 font-mono">{model.customModelName}</span>
                             ) : null}
-                            {configBadge('API Key', !!model.has_api_key)}
-                            {model.customModelName ? configBadge('Variant', true) : null}
-                            {model.customApiUrl ? configBadge('Base URL', true) : null}
+                            {configBadge(t('settingsPage.badgeApiKey', language), !!model.has_api_key)}
+                            {model.customModelName ? configBadge(t('settingsPage.badgeVariant', language), true) : null}
+                            {model.customApiUrl ? configBadge(t('settingsPage.badgeBaseUrl', language), true) : null}
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${model.enabled ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-700 text-zinc-500'}`}>
-                          {model.enabled ? 'Active' : 'Inactive'}
+                          {model.enabled ? t('settingsPage.statusActive', language) : t('settingsPage.statusInactive', language)}
                         </span>
                         <Pencil size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors" />
                       </div>
@@ -404,20 +411,26 @@ export function SettingsPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-zinc-400">
-                  {exchanges.length} account{exchanges.length !== 1 ? 's' : ''} connected
+                  {t(
+                    exchanges.length === 1
+                      ? 'settingsPage.exchangesConnected'
+                      : 'settingsPage.exchangesConnectedPlural',
+                    language,
+                    { count: exchanges.length }
+                  )}
                 </p>
                 <button
                   onClick={() => { setEditingExchange(null); setShowExchangeModal(true) }}
                   className="flex items-center gap-1.5 text-xs font-medium bg-nofx-gold/10 hover:bg-nofx-gold/20 text-nofx-gold px-3 py-1.5 rounded-lg transition-colors"
                 >
                   <Plus size={14} />
-                  Add Exchange
+                  {t('settingsPage.addExchange', language)}
                 </button>
               </div>
 
               {exchanges.length === 0 ? (
                 <div className="text-center py-8 text-zinc-600 text-sm">
-                  No exchange accounts connected yet
+                  {t('settingsPage.noExchangesYet', language)}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -435,12 +448,12 @@ export function SettingsPage() {
                           <p className="text-sm font-medium text-white">{exchange.account_name || exchange.name}</p>
                           <div className="flex flex-wrap items-center gap-1.5 mt-1">
                             <p className="text-xs text-zinc-500 capitalize">{exchange.exchange_type || exchange.type}</p>
-                            {configBadge('API Key', !!exchange.has_api_key)}
-                            {configBadge('Secret', !!exchange.has_secret_key)}
-                            {exchange.has_passphrase ? configBadge('Passphrase', true) : null}
-                            {exchange.hyperliquidWalletAddr ? configBadge('Wallet', true) : null}
-                            {exchange.has_aster_private_key ? configBadge('Aster Key', true) : null}
-                            {exchange.has_lighter_private_key || exchange.has_lighter_api_key_private_key ? configBadge('Lighter Key', true) : null}
+                            {configBadge(t('settingsPage.badgeApiKey', language), !!exchange.has_api_key)}
+                            {configBadge(t('settingsPage.badgeSecret', language), !!exchange.has_secret_key)}
+                            {exchange.has_passphrase ? configBadge(t('settingsPage.badgePassphrase', language), true) : null}
+                            {exchange.hyperliquidWalletAddr ? configBadge(t('settingsPage.badgeWallet', language), true) : null}
+                            {exchange.has_aster_private_key ? configBadge(t('settingsPage.badgeAsterKey', language), true) : null}
+                            {exchange.has_lighter_private_key || exchange.has_lighter_api_key_private_key ? configBadge(t('settingsPage.badgeLighterKey', language), true) : null}
                           </div>
                         </div>
                       </div>
@@ -456,7 +469,7 @@ export function SettingsPage() {
           {activeTab === 'telegram' && (
             <div className="space-y-4">
               <p className="text-sm text-zinc-400">
-                Connect a Telegram bot to receive trading notifications and interact with your traders.
+                {t('settingsPage.telegramDesc', language)}
               </p>
               <button
                 onClick={() => setShowTelegramModal(true)}
@@ -466,7 +479,7 @@ export function SettingsPage() {
                   <div className="w-8 h-8 rounded-lg bg-[#0088cc]/20 flex items-center justify-center">
                     <MessageCircle size={14} className="text-[#0088cc]" />
                   </div>
-                  <span className="text-sm font-medium text-white">Configure Telegram Bot</span>
+                  <span className="text-sm font-medium text-white">{t('settingsPage.configureTelegram', language)}</span>
                 </div>
                 <ChevronRight size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors" />
               </button>

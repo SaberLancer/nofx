@@ -210,7 +210,7 @@ export function RiskControlEditor({
                 {config.btc_eth_max_position_value_ratio ?? 5}x
               </span>
               <span className="text-xs" style={{ color: '#848E9C' }}>
-                System enforced
+                {ts(riskControl.systemEnforcedBadge, language)}
               </span>
             </div>
           </div>
@@ -233,7 +233,7 @@ export function RiskControlEditor({
                 {config.altcoin_max_position_value_ratio ?? 1}x
               </span>
               <span className="text-xs" style={{ color: '#848E9C' }}>
-                System enforced
+                {ts(riskControl.systemEnforcedBadge, language)}
               </span>
             </div>
           </div>
@@ -297,7 +297,7 @@ export function RiskControlEditor({
                 {Math.round((config.max_margin_usage ?? 0.9) * 100)}%
               </span>
               <span className="text-xs" style={{ color: '#848E9C' }}>
-                System enforced
+                {ts(riskControl.systemEnforcedBadge, language)}
               </span>
             </div>
           </div>
@@ -541,7 +541,7 @@ export function RiskControlEditor({
                 USDT
               </span>
               <span className="text-xs" style={{ color: '#848E9C' }}>
-                System enforced
+                {ts(riskControl.systemEnforcedBadge, language)}
               </span>
             </div>
           </div>

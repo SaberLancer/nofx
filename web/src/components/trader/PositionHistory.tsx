@@ -10,6 +10,7 @@ import {
   openActionForSide,
 } from '../../lib/decisionTradeMatch'
 import { useLanguage } from '../../contexts/LanguageContext'
+import { getDecisionActionLabel } from '../../lib/decisionActionLabels'
 import { t, type Language } from '../../i18n/translations'
 import { MetricTooltip } from '../common/MetricTooltip'
 import { formatPrice, formatQuantity } from '../../utils/format'
@@ -524,7 +525,7 @@ function PositionRow({
             style={{ color: '#0ECB81', border: '1px solid rgba(14, 203, 129, 0.35)' }}
           >
             <Brain className="w-3.5 h-3.5" />
-            <span>{language === 'zh' ? '开' : 'In'}</span>
+            <span>{t('positionHistory.btnOpen', language)}</span>
           </button>
           <button
             type="button"
@@ -537,7 +538,7 @@ function PositionRow({
             style={{ color: '#F6465D', border: '1px solid rgba(246, 70, 93, 0.35)' }}
           >
             <Brain className="w-3.5 h-3.5" />
-            <span>{language === 'zh' ? '平' : 'Out'}</span>
+            <span>{t('positionHistory.btnClose', language)}</span>
           </button>
           <button
             type="button"
@@ -549,7 +550,7 @@ function PositionRow({
             className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-white/10"
             style={{ color: '#F0B90B', border: '1px solid rgba(240, 185, 11, 0.35)' }}
           >
-            <span>{language === 'zh' ? '详' : 'Ops'}</span>
+            <span>{t('positionHistory.btnDetail', language)}</span>
           </button>
         </div>
       </td>
@@ -564,16 +565,14 @@ function isCloseOrderAction(action: string | undefined): boolean {
 
 function formatCloseAction(action: string, language: Language): string {
   const normalized = String(action || '').trim().toLowerCase()
-  if (language === 'zh') {
-    if (normalized === 'close_long') return '平多'
-    if (normalized === 'close_short') return '平空'
-    if (normalized === 'open_long') return '开多'
-    if (normalized === 'open_short') return '开空'
+  if (
+    normalized === 'close_long' ||
+    normalized === 'close_short' ||
+    normalized === 'open_long' ||
+    normalized === 'open_short'
+  ) {
+    return getDecisionActionLabel(normalized, language)
   }
-  if (normalized === 'close_long') return 'Close Long'
-  if (normalized === 'close_short') return 'Close Short'
-  if (normalized === 'open_long') return 'Open Long'
-  if (normalized === 'open_short') return 'Open Short'
   return action || '-'
 }
 
@@ -1237,17 +1236,23 @@ export function PositionHistory({ traderId, openPositionCount, openPositionsKey 
               {t('positionHistory.side', language)}:
             </span>
             <div className="flex rounded overflow-hidden" style={{ border: '1px solid #2B3139' }}>
-              {['all', 'LONG', 'SHORT'].map((side) => (
+              {(
+                [
+                  { value: 'all', label: t('positionHistory.all', language) },
+                  { value: 'LONG', label: t('long', language) },
+                  { value: 'SHORT', label: t('short', language) },
+                ] as const
+              ).map(({ value, label }) => (
                 <button
-                  key={side}
-                  onClick={() => setFilterSide(side)}
+                  key={value}
+                  onClick={() => setFilterSide(value)}
                   className="px-3 py-1.5 text-sm capitalize transition-colors"
                   style={{
-                    background: filterSide === side ? '#2B3139' : 'transparent',
-                    color: filterSide === side ? '#EAECEF' : '#848E9C',
+                    background: filterSide === value ? '#2B3139' : 'transparent',
+                    color: filterSide === value ? '#EAECEF' : '#848E9C',
                   }}
                 >
-                  {side === 'all' ? t('positionHistory.all', language) : side}
+                  {label}
                 </button>
               ))}
             </div>
@@ -1482,7 +1487,7 @@ export function PositionHistory({ traderId, openPositionCount, openPositionsKey 
             {/* Page size selector */}
             <div className="flex items-center gap-2">
               <span className="text-xs" style={{ color: '#848E9C' }}>
-                {language === 'zh' ? '每页' : 'Per page'}:
+                {t('traderDashboard.perPage', language)}:
               </span>
               <NofxSelect
                 value={pageSize}

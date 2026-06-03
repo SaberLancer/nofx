@@ -234,7 +234,7 @@ export function TraderDashboardPage({
     const handleClosePosition = async (symbol: string, side: string) => {
         if (!selectedTraderId) return
 
-        const sideLabel = side === 'LONG' ? 'LONG' : 'SHORT'
+        const sideLabel = side === 'LONG' ? t('long', language) : t('short', language)
         const confirmMsg = t('traderDashboard.confirmClosePosition', language, { symbol, side: sideLabel })
 
         const confirmed = await confirmToast(confirmMsg, {
@@ -480,7 +480,7 @@ export function TraderDashboardPage({
                     </div>
                     <div className="flex items-center gap-6 text-sm flex-wrap text-nofx-text-muted font-mono pl-2">
                         <span className="flex items-center gap-2">
-                            <span className="opacity-60">AI Model:</span>
+                            <span className="opacity-60">{t('traderDashboard.aiModelLabel', language)}:</span>
                             <span
                                 className="font-bold px-2 py-0.5 rounded text-xs tracking-wide"
                                 style={{
@@ -497,7 +497,7 @@ export function TraderDashboardPage({
                         </span>
                         <span className="w-px h-3 bg-white/10 hidden md:block" />
                         <span className="flex items-center gap-2">
-                            <span className="opacity-60">Exchange:</span>
+                            <span className="opacity-60">{t('traderDashboard.exchangeLabel', language)}:</span>
                             <span className="text-nofx-text-main font-semibold">
                                 {getExchangeDisplayNameFromList(
                                     selectedTrader.exchange_id,
@@ -507,17 +507,17 @@ export function TraderDashboardPage({
                         </span>
                         <span className="w-px h-3 bg-white/10 hidden md:block" />
                         <span className="flex items-center gap-2">
-                            <span className="opacity-60">Strategy:</span>
+                            <span className="opacity-60">{t('traderDashboard.strategyLabel', language)}:</span>
                             <span className="text-nofx-gold font-semibold tracking-wide">
-                                {selectedTrader.strategy_name || 'No Strategy'}
+                                {selectedTrader.strategy_name || t('traderDashboard.noStrategy', language)}
                             </span>
                         </span>
                         {status && (
                             <div className="hidden md:contents">
                                 <span className="w-px h-3 bg-white/10" />
-                                <span>Cycles: <span className="text-nofx-text-main">{status.call_count}</span></span>
+                                <span>{t('traderDashboard.cyclesLabel', language)}: <span className="text-nofx-text-main">{status.call_count}</span></span>
                                 <span className="w-px h-3 bg-white/10" />
-                                <span>Runtime: <span className="text-nofx-text-main">{status.runtime_minutes} min</span></span>
+                                <span>{t('traderDashboard.runtimeLabel', language)}: <span className="text-nofx-text-main">{status.runtime_minutes} {t('traderDashboard.runtimeMin', language)}</span></span>
                             </div>
                         )}
                     </div>
@@ -525,12 +525,12 @@ export function TraderDashboardPage({
 
                 {/* Debug Info */}
                 <div className="mb-4 px-3 py-1.5 rounded bg-black/40 border border-white/5 text-[10px] font-mono text-nofx-text-muted flex justify-between items-center opacity-60 hover:opacity-100 transition-opacity">
-                    <span style={{ color: '#0ECB81' }}>SYSTEM_STATUS::ONLINE</span>
+                    <span style={{ color: '#0ECB81' }}>{t('traderDashboard.debugOnline', language)}</span>
                     {account ? (
                         <div className="flex gap-4">
-                            <span>LAST_UPDATE::{lastUpdate}</span>
-                            <span>EQ::{account.total_equity?.toFixed(2)}</span>
-                            <span>PNL::{account.total_pnl?.toFixed(2)}</span>
+                            <span>{t('traderDashboard.debugLastUpdate', language)}::{lastUpdate}</span>
+                            <span>{t('traderDashboard.debugEq', language)}::{account.total_equity?.toFixed(2)}</span>
+                            <span>{t('traderDashboard.debugPnl', language)}::{account.total_pnl?.toFixed(2)}</span>
                         </div>
                     ) : accountFailed ? (
                         <span style={{ color: '#F6465D' }}>{t('traderDashboard.accountFetchFailed', language)}</span>
@@ -574,7 +574,7 @@ export function TraderDashboardPage({
                     <StatCard
                         title={t('positions', language)}
                         value={accountFailed && !account ? '--' : `${account?.position_count ?? '--'}`}
-                        unit="ACTIVE"
+                        unit={t('traderDashboard.positionsUnitActive', language)}
                         subtitle={accountFailed && !account ? `${t('margin', language)}: --` : `${t('margin', language)}: ${account?.margin_used_pct?.toFixed(1) ?? '--'}%`}
                         icon="📊"
                         loading={!account && !accountFailed}

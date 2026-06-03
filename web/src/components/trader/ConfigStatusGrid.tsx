@@ -93,7 +93,7 @@ export function ConfigStatusGrid({
         }
       default:
         return {
-          label: language === 'zh' ? '暂时无法获取' : 'UNAVAILABLE',
+          label: t('configExchangeUnavailable', language),
           className: 'text-zinc-300 border-zinc-600/60 bg-zinc-800/50',
         }
     }
@@ -161,11 +161,14 @@ export function ConfigStatusGrid({
                       ? 'bg-green-500/10 border-green-500/30 text-green-400'
                       : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
                       }`}>
-                      {usageInfo.runningCount}/{usageInfo.totalCount} ACTIVE
+                      {t('configActiveUsage', language, {
+                        running: usageInfo.runningCount,
+                        total: usageInfo.totalCount,
+                      })}
                     </span>
                   ) : (
                     <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-wider">
-                      {language === 'zh' ? '就绪' : 'STANDBY'}
+                      {t('configStandby', language)}
                     </span>
                   )}
                 </div>
@@ -271,11 +274,14 @@ export function ConfigStatusGrid({
                       ? 'bg-green-500/10 border-green-500/30 text-green-400'
                       : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
                       }`}>
-                      {usageInfo.runningCount}/{usageInfo.totalCount} ACTIVE
+                      {t('configActiveUsage', language, {
+                        running: usageInfo.runningCount,
+                        total: usageInfo.totalCount,
+                      })}
                     </span>
                   ) : (
                     <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-wider">
-                      {language === 'zh' ? '就绪' : 'STANDBY'}
+                      {t('configStandby', language)}
                     </span>
                   )}
                 </div>

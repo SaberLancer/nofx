@@ -17,6 +17,7 @@ import {
   symbolsInDecision,
   type LivePositionPnL,
 } from '../../lib/positionPnLCompare'
+import { getDecisionActionLabel } from '../../lib/decisionActionLabels'
 import { formatDecisionTimestamps, formatBeijingDateTime } from '../../utils/format'
 
 interface DecisionCardProps {
@@ -30,14 +31,14 @@ interface DecisionCardProps {
 }
 
 // Action type configuration
-const ACTION_CONFIG: Record<string, { color: string; bg: string; icon: string; label: string }> = {
-  open_long: { color: '#0ECB81', bg: 'rgba(14, 203, 129, 0.15)', icon: '📈', label: 'LONG' },
-  open_short: { color: '#F6465D', bg: 'rgba(246, 70, 93, 0.15)', icon: '📉', label: 'SHORT' },
-  close_long: { color: '#F0B90B', bg: 'rgba(240, 185, 11, 0.15)', icon: '💰', label: 'CLOSE' },
-  close_short: { color: '#F0B90B', bg: 'rgba(240, 185, 11, 0.15)', icon: '💰', label: 'CLOSE' },
-  hold: { color: '#848E9C', bg: 'rgba(132, 142, 156, 0.15)', icon: '⏸️', label: 'HOLD' },
-  wait: { color: '#848E9C', bg: 'rgba(132, 142, 156, 0.15)', icon: '⏳', label: 'WAIT' },
-  unavailable: { color: '#F6465D', bg: 'rgba(246, 70, 93, 0.15)', icon: '⚠️', label: 'UNAVAILABLE' },
+const ACTION_CONFIG: Record<string, { color: string; bg: string; icon: string }> = {
+  open_long: { color: '#0ECB81', bg: 'rgba(14, 203, 129, 0.15)', icon: '📈' },
+  open_short: { color: '#F6465D', bg: 'rgba(246, 70, 93, 0.15)', icon: '📉' },
+  close_long: { color: '#F0B90B', bg: 'rgba(240, 185, 11, 0.15)', icon: '💰' },
+  close_short: { color: '#F0B90B', bg: 'rgba(240, 185, 11, 0.15)', icon: '💰' },
+  hold: { color: '#848E9C', bg: 'rgba(132, 142, 156, 0.15)', icon: '⏸️' },
+  wait: { color: '#848E9C', bg: 'rgba(132, 142, 156, 0.15)', icon: '⏳' },
+  unavailable: { color: '#F6465D', bg: 'rgba(246, 70, 93, 0.15)', icon: '⚠️' },
 }
 
 // Format price with proper decimals
@@ -77,9 +78,10 @@ function ActionCard({
   highlighted?: boolean
 }) {
   const baseConfig = ACTION_CONFIG[action.action] || ACTION_CONFIG.wait
-  const config = isUnavailableAction(action)
-    ? { ...ACTION_CONFIG.unavailable, label: t('decisionCard.candidateUnavailable', language) }
-    : baseConfig
+  const config = isUnavailableAction(action) ? ACTION_CONFIG.unavailable : baseConfig
+  const actionLabel = isUnavailableAction(action)
+    ? t('decisionCard.candidateUnavailable', language)
+    : getDecisionActionLabel(action.action, language)
   const isLong = action.action.includes('long')
   const isOpen = action.action.includes('open')
   const showUnavailable = isUnavailableAction(action)
@@ -105,7 +107,7 @@ function ActionCard({
             className="font-mono font-bold text-lg cursor-pointer transition-all duration-200 hover:scale-110"
             style={{ color: '#EAECEF' }}
             onClick={() => onSymbolClick?.(action.symbol)}
-            title="Click to view chart"
+            title={t('decisionCard.viewChartTitle', language)}
           >
             {action.symbol.replace('USDT', '')}
           </span>
@@ -113,7 +115,7 @@ function ActionCard({
             className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
             style={{ background: config.bg, color: config.color, border: `1px solid ${config.color}55` }}
           >
-            {config.label}
+            {actionLabel}
           </span>
         </div>
 
@@ -455,7 +457,7 @@ export function DecisionCard({
               >
                 <span className="text-base">⚙️</span>
                 <span className="font-semibold" style={{ color: '#a78bfa' }}>
-                  System Prompt
+                  {t('strategyStudio.systemPrompt', language)}
                 </span>
                 <span
                   className="text-xs px-2 py-0.5 rounded ml-auto"
@@ -467,10 +469,15 @@ export function DecisionCard({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => copyToClipboard(decision.system_prompt, 'System Prompt')}
+                  onClick={() =>
+                    copyToClipboard(
+                      decision.system_prompt,
+                      t('strategyStudio.systemPrompt', language)
+                    )
+                  }
                   className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
                   style={{ background: 'rgba(167, 139, 250, 0.2)', color: '#a78bfa', border: '1px solid rgba(167, 139, 250, 0.3)' }}
-                  title="Copy to clipboard"
+                  title={t('decisionCard.copyToClipboard', language)}
                 >
                   <span>📋</span>
                 </button>
@@ -481,7 +488,7 @@ export function DecisionCard({
                   }
                   className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
                   style={{ background: 'rgba(167, 139, 250, 0.2)', color: '#a78bfa', border: '1px solid rgba(167, 139, 250, 0.3)' }}
-                  title="Download as file"
+                  title={t('decisionCard.downloadAsFile', language)}
                 >
                   <span>💾</span>
                 </button>
@@ -513,7 +520,7 @@ export function DecisionCard({
               >
                 <span className="text-base">📥</span>
                 <span className="font-semibold" style={{ color: '#60a5fa' }}>
-                  User Prompt
+                  {t('strategyStudio.userPrompt', language)}
                 </span>
                 <span
                   className="text-xs px-2 py-0.5 rounded ml-auto"
@@ -525,10 +532,15 @@ export function DecisionCard({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => copyToClipboard(decision.input_prompt, 'User Prompt')}
+                  onClick={() =>
+                    copyToClipboard(
+                      decision.input_prompt,
+                      t('strategyStudio.userPrompt', language)
+                    )
+                  }
                   className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
                   style={{ background: 'rgba(96, 165, 250, 0.2)', color: '#60a5fa', border: '1px solid rgba(96, 165, 250, 0.3)' }}
-                  title="Copy to clipboard"
+                  title={t('decisionCard.copyToClipboard', language)}
                 >
                   <span>📋</span>
                 </button>
@@ -539,7 +551,7 @@ export function DecisionCard({
                   }
                   className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
                   style={{ background: 'rgba(96, 165, 250, 0.2)', color: '#60a5fa', border: '1px solid rgba(96, 165, 250, 0.3)' }}
-                  title="Download as file"
+                  title={t('decisionCard.downloadAsFile', language)}
                 >
                   <span>💾</span>
                 </button>
