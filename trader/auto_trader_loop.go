@@ -559,6 +559,7 @@ func (at *AutoTrader) buildTradingContext(pnlRecord *store.DecisionRecord) (*ker
 		Positions:      positionInfos,
 		CandidateCoins: candidateCoins,
 		KlineExchange:  at.exchange,
+		KlineSimulated: at.klineOptions().Simulated,
 	}
 
 	// 7. Add recent closed trades (if store is available)

@@ -10,6 +10,7 @@ import (
 	_ "nofx/mcp/payment"
 	_ "nofx/mcp/provider"
 	"nofx/store"
+	"strings"
 	"nofx/trader/aster"
 	"nofx/trader/binance"
 	"nofx/trader/bitget"
@@ -718,6 +719,14 @@ func (at *AutoTrader) runPreLaunchChecks() {
 	}
 
 	logger.Info("✅ Pre-launch checks complete")
+}
+
+// klineOptions returns market data options aligned with the trader's exchange mode.
+func (at *AutoTrader) klineOptions() market.KlineOptions {
+	if strings.EqualFold(at.exchange, "okx") && at.config.OKXTestnet {
+		return market.KlineOptions{Simulated: true}
+	}
+	return market.KlineOptions{}
 }
 
 // deriveWalletAddress derives an Ethereum address from a hex private key

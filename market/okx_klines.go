@@ -3,9 +3,6 @@ package market
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"nofx/security"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +11,8 @@ import (
 const okxCandlesURL = "https://www.okx.com/api/v5/market/candles"
 
 // GetKlinesRecentOKX fetches the latest N swap candles from OKX public market API.
-func GetKlinesRecentOKX(symbol string, timeframe string, limit int) ([]Kline, error) {
+// When simulated is true, requests demo-trading klines via x-simulated-trading: 1.
+func GetKlinesRecentOKX(symbol string, timeframe string, limit int, simulated bool) ([]Kline, error) {
 	symbol = Normalize(symbol)
 	if _, err := NormalizeTimeframe(timeframe); err != nil {
 		return nil, err
@@ -33,18 +31,9 @@ func GetKlinesRecentOKX(symbol string, timeframe string, limit int) ([]Kline, er
 	instID := okxInstID(symbol)
 	url := fmt.Sprintf("%s?instId=%s&bar=%s&limit=%d", okxCandlesURL, instID, bar, limit)
 
-	resp, err := security.SafeGet(url, 15*time.Second)
+	body, err := okxPublicGet(url, simulated, 15*time.Second)
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("okx candles api returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	return parseOKXCandlesJSON(body)

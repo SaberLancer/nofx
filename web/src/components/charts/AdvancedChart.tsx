@@ -24,6 +24,24 @@ import { Settings, BarChart2 } from 'lucide-react'
 // Default number of candles shown on first load / symbol change
 const DEFAULT_VISIBLE_BARS = 80
 
+// A-share style: red up, green down
+const KLINE_UP_COLOR = '#F6465D'
+const KLINE_DOWN_COLOR = '#0ECB81'
+const KLINE_UP_COLOR_ALPHA = 'rgba(246, 70, 93, 0.5)'
+const KLINE_DOWN_COLOR_ALPHA = 'rgba(14, 203, 129, 0.5)'
+
+function klineDirectionColor(close: number, open: number): string {
+  return close >= open ? KLINE_UP_COLOR : KLINE_DOWN_COLOR
+}
+
+function priceChangeColor(change: number): string {
+  return change >= 0 ? KLINE_UP_COLOR : KLINE_DOWN_COLOR
+}
+
+function priceChangeBg(change: number): string {
+  return change >= 0 ? 'rgba(246, 70, 93, 0.1)' : 'rgba(14, 203, 129, 0.1)'
+}
+
 // Order marker interface
 interface OrderMarker {
   time: number
@@ -54,6 +72,7 @@ interface AdvancedChartProps {
   traderID?: string
   height?: number
   exchange?: string // Exchange type: binance, bybit, okx, bitget, hyperliquid, aster, lighter
+  exchangeSimulated?: boolean // OKX demo trading klines when true
   onSymbolChange?: (symbol: string) => void // Symbol change callback
 }
 
@@ -104,6 +123,7 @@ export function AdvancedChart({
   traderID,
   height = 550,
   exchange = 'binance', // Default to binance
+  exchangeSimulated = false,
   onSymbolChange: _onSymbolChange, // Available for future use
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
@@ -162,7 +182,7 @@ export function AdvancedChart({
       const volumeData = klineData.map((k: Kline) => ({
         time: k.time,
         value: k.volume || 0,
-        color: k.close >= k.open ? 'rgba(14, 203, 129, 0.5)' : 'rgba(246, 70, 93, 0.5)',
+        color: k.close >= k.open ? KLINE_UP_COLOR_ALPHA : KLINE_DOWN_COLOR_ALPHA,
       }))
       volumeSeriesRef.current.setData(volumeData)
     } else {
@@ -243,7 +263,9 @@ export function AdvancedChart({
   const fetchKlineData = async (symbol: string, interval: string) => {
     try {
       const limit = 1500
-      const klineUrl = `/api/klines?symbol=${symbol}&interval=${interval}&limit=${limit}&exchange=${exchange}`
+      const simulatedParam =
+        exchangeSimulated && exchange.toLowerCase() === 'okx' ? '&simulated=1' : ''
+      const klineUrl = `/api/klines?symbol=${symbol}&interval=${interval}&limit=${limit}&exchange=${exchange}${simulatedParam}`
       const result = await httpClient.request(klineUrl, { silent: true })
 
       if (!result.success || !result.data) {
@@ -524,12 +546,12 @@ export function AdvancedChart({
 
     // Create candlestick series
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#0ECB81',
-      downColor: '#F6465D',
-      borderUpColor: '#0ECB81',
-      borderDownColor: '#F6465D',
-      wickUpColor: '#0ECB81',
-      wickDownColor: '#F6465D',
+      upColor: KLINE_UP_COLOR,
+      downColor: KLINE_DOWN_COLOR,
+      borderUpColor: KLINE_UP_COLOR,
+      borderDownColor: KLINE_DOWN_COLOR,
+      wickUpColor: KLINE_UP_COLOR,
+      wickDownColor: KLINE_DOWN_COLOR,
     })
     candlestickSeriesRef.current = candlestickSeries as any
 
@@ -829,7 +851,7 @@ export function AdvancedChart({
     // Real-time auto-refresh (every 5 seconds)
     const refreshInterval = setInterval(() => loadData(true), 5000)
     return () => clearInterval(refreshInterval)
-  }, [symbol, interval, traderID, exchange])
+  }, [symbol, interval, traderID, exchange, exchangeSimulated])
 
   // Re-apply indicators immediately when user toggles checkboxes
   useEffect(() => {
@@ -978,7 +1000,7 @@ export function AdvancedChart({
             <div className="flex items-center gap-3 pl-3 border-l border-[#2B3139]">
               <span
                 className="text-base font-bold tabular-nums"
-                style={{ color: marketStats.priceChange >= 0 ? '#10B981' : '#EF4444' }}
+                style={{ color: priceChangeColor(marketStats.priceChange) }}
               >
                 {marketStats.price.toLocaleString(undefined, {
                   minimumFractionDigits: 2,
@@ -988,8 +1010,8 @@ export function AdvancedChart({
               <span
                 className="text-xs font-medium px-1.5 py-0.5 rounded tabular-nums"
                 style={{
-                  background: marketStats.priceChange >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                  color: marketStats.priceChange >= 0 ? '#10B981' : '#EF4444',
+                  background: priceChangeBg(marketStats.priceChange),
+                  color: priceChangeColor(marketStats.priceChange),
                 }}
               >
                 {marketStats.priceChange >= 0 ? '+' : ''}{marketStats.priceChangePercent.toFixed(2)}%
@@ -1148,14 +1170,14 @@ export function AdvancedChart({
               <span style={{ color: '#EAECEF', fontWeight: '500' }}>{tooltipData.open?.toFixed(2)}</span>
 
               <span style={{ color: '#848E9C' }}>H:</span>
-              <span style={{ color: '#0ECB81', fontWeight: '500' }}>{tooltipData.high?.toFixed(2)}</span>
+              <span style={{ color: KLINE_UP_COLOR, fontWeight: '500' }}>{tooltipData.high?.toFixed(2)}</span>
 
               <span style={{ color: '#848E9C' }}>L:</span>
-              <span style={{ color: '#F6465D', fontWeight: '500' }}>{tooltipData.low?.toFixed(2)}</span>
+              <span style={{ color: KLINE_DOWN_COLOR, fontWeight: '500' }}>{tooltipData.low?.toFixed(2)}</span>
 
               <span style={{ color: '#848E9C' }}>C:</span>
               <span style={{
-                color: tooltipData.close >= tooltipData.open ? '#0ECB81' : '#F6465D',
+                color: klineDirectionColor(tooltipData.close, tooltipData.open),
                 fontWeight: 'bold'
               }}>
                 {tooltipData.close?.toFixed(2)}

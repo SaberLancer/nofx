@@ -11,7 +11,8 @@ interface ChartTabsProps {
   traderId: string
   selectedSymbol?: string // Externally selected symbol
   updateKey?: number // Force update key
-  exchangeId?: string // Exchange ID
+  exchangeId?: string // Exchange type for kline source (okx, binance, ...)
+  exchangeTestnet?: boolean // OKX demo / exchange testnet → simulated klines
   candidateSymbols?: string[] // Candidate symbols from recent decision context
 }
 
@@ -53,7 +54,7 @@ function getMarketTypeFromExchange(exchangeId: string | undefined): MarketType {
   return 'crypto'
 }
 
-export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId, candidateSymbols = [] }: ChartTabsProps) {
+export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId, exchangeTestnet = false, candidateSymbols = [] }: ChartTabsProps) {
   const { language } = useLanguage()
   const [activeTab, setActiveTab] = useState<ChartTab>('equity')
   const [chartSymbol, setChartSymbol] = useState<string>('BTC')
@@ -343,7 +344,7 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId, can
             </motion.div>
           ) : (
             <motion.div
-              key={`kline-${chartSymbol}-${interval}-${currentExchange}`}
+              key={`kline-${chartSymbol}-${interval}-${currentExchange}-${exchangeTestnet ? 'sim' : 'live'}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -356,6 +357,7 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId, can
                 traderID={traderId}
                 // Dynamic auto-sizing via ResizeObserver
                 exchange={currentExchange}
+                exchangeSimulated={exchangeTestnet}
                 onSymbolChange={setChartSymbol}
               />
             </motion.div>

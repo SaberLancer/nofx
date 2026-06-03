@@ -3,7 +3,6 @@ package market
 import (
 	"encoding/json"
 	"fmt"
-	"nofx/security"
 	"strconv"
 	"strings"
 	"time"
@@ -11,15 +10,14 @@ import (
 
 const okxTradesURL = "https://www.okx.com/api/v5/market/trades"
 
-func fetchOKXRecentTicks(symbol string, limit int) ([]RawTick, error) {
+func fetchOKXRecentTicks(symbol string, limit int, simulated bool) ([]RawTick, error) {
 	instID := okxInstID(symbol)
 	url := fmt.Sprintf("%s?instId=%s&limit=%d", okxTradesURL, instID, limit)
 
-	resp, err := security.SafeGet(url, defaultTickFetchTimeout)
+	body, err := okxPublicGet(url, simulated, defaultTickFetchTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("okx trades request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
 	var payload struct {
 		Code string `json:"code"`
@@ -31,7 +29,7 @@ func fetchOKXRecentTicks(symbol string, limit int) ([]RawTick, error) {
 			Ts   string `json:"ts"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("okx trades decode failed: %w", err)
 	}
 	if payload.Code != "" && payload.Code != "0" {

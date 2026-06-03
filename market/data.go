@@ -36,6 +36,11 @@ func Get(symbol string) (*Data, error) {
 
 // GetWithExchange retrieves market data for the specified token using exchange-specific data
 func GetWithExchange(symbol, exchange string) (*Data, error) {
+	return GetWithExchangeOptions(symbol, exchange, KlineOptions{})
+}
+
+// GetWithExchangeOptions retrieves market data with optional OKX simulated-trading klines.
+func GetWithExchangeOptions(symbol, exchange string, opts KlineOptions) (*Data, error) {
 	var klines3m, klines4h []Kline
 	var err error
 	// Normalize symbol
@@ -56,7 +61,7 @@ func GetWithExchange(symbol, exchange string) (*Data, error) {
 		}
 	} else {
 		// Use CoinAnk for regular crypto assets with exchange-specific data
-		klines3m, err = getKlinesFromCoinAnk(symbol, "3m", exchange, 100)
+		klines3m, err = getKlinesFromCoinAnk(symbol, "3m", exchange, 100, opts)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to get 3-minute K-line from CoinAnk (%s): %v", exchange, err)
 		}
@@ -75,7 +80,7 @@ func GetWithExchange(symbol, exchange string) (*Data, error) {
 			return nil, fmt.Errorf("Failed to get 4-hour K-line from Hyperliquid: %v", err)
 		}
 	} else {
-		klines4h, err = getKlinesFromCoinAnk(symbol, "4h", exchange, 100)
+		klines4h, err = getKlinesFromCoinAnk(symbol, "4h", exchange, 100, opts)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to get 4-hour K-line from CoinAnk (%s): %v", exchange, err)
 		}
@@ -148,6 +153,11 @@ func GetWithExchange(symbol, exchange string) (*Data, error) {
 // GetWithTimeframes retrieves market data for specified multiple timeframes.
 // exchange selects the preferred kline source (e.g. "okx", "binance"); empty defaults to binance.
 func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe string, count int, exchange string) (*Data, error) {
+	return GetWithTimeframesOptions(symbol, timeframes, primaryTimeframe, count, exchange, KlineOptions{})
+}
+
+// GetWithTimeframesOptions retrieves multi-timeframe market data with optional OKX simulated klines.
+func GetWithTimeframesOptions(symbol string, timeframes []string, primaryTimeframe string, count int, exchange string, opts KlineOptions) (*Data, error) {
 	symbol = Normalize(symbol)
 	exchange = NormalizeKlineExchange(exchange)
 
@@ -197,7 +207,7 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 			}
 		} else {
 			// Use CoinAnk for regular crypto assets (default to Binance)
-			klines, err = getKlinesFromCoinAnk(symbol, tf, exchange, 200)
+			klines, err = getKlinesFromCoinAnk(symbol, tf, exchange, 200, opts)
 			if err != nil {
 				logger.Infof("⚠️ Failed to get %s %s K-line from CoinAnk: %v", symbol, tf, err)
 				continue

@@ -23,14 +23,26 @@ const (
 )
 
 // getKlinesFromCoinAnk fetches kline data from CoinAnk API (replacement for WSMonitorCli)
-func getKlinesFromCoinAnk(symbol, interval, exchange string, limit int) ([]Kline, error) {
+func getKlinesFromCoinAnk(symbol, interval, exchange string, limit int, opts KlineOptions) ([]Kline, error) {
 	exchange = NormalizeKlineExchange(exchange)
 
 	if exchange == "okx" && !IsXyzDexAsset(symbol) {
-		if klines, err := GetKlinesRecentOKX(symbol, interval, limit); err == nil && len(klines) > 0 {
-			logger.Infof("✓ OKX direct klines succeeded for %s %s (%d bars)", symbol, interval, len(klines))
+		klines, err := GetKlinesRecentOKX(symbol, interval, limit, opts.Simulated)
+		if err == nil && len(klines) > 0 {
+			if opts.Simulated {
+				logger.Infof("✓ OKX simulated klines succeeded for %s %s (%d bars)", symbol, interval, len(klines))
+			} else {
+				logger.Infof("✓ OKX direct klines succeeded for %s %s (%d bars)", symbol, interval, len(klines))
+			}
 			return klines, nil
-		} else if err != nil {
+		}
+		if opts.Simulated {
+			if err != nil {
+				return nil, fmt.Errorf("OKX simulated klines failed for %s %s: %w", symbol, interval, err)
+			}
+			return nil, fmt.Errorf("OKX simulated klines empty for %s %s", symbol, interval)
+		}
+		if err != nil {
 			logger.Warnf("⚠️ OKX direct klines failed for %s %s: %v", symbol, interval, err)
 		}
 	}
@@ -117,6 +129,11 @@ func getKlinesFromCoinAnk(symbol, interval, exchange string, limit int) ([]Kline
 	}
 
 	return getKlinesWithBinanceDirectFallback(symbol, interval, limit, coinankErr)
+}
+
+// GetExchangeKlines fetches klines for a crypto exchange (OKX direct, CoinAnk, Binance fallback).
+func GetExchangeKlines(symbol, interval, exchange string, limit int, opts KlineOptions) ([]Kline, error) {
+	return getKlinesFromCoinAnk(symbol, interval, exchange, limit, opts)
 }
 
 func coinAnkSymbol(symbol string, exchange coinank_enum.Exchange) string {
@@ -505,7 +522,7 @@ func GetBoxData(symbol string) (*BoxData, error) {
 	if IsXyzDexAsset(symbol) {
 		klines, err = getKlinesFromHyperliquid(symbol, "1h", LongBoxPeriod)
 	} else {
-		klines, err = getKlinesFromCoinAnk(symbol, "1h", "binance", LongBoxPeriod)
+		klines, err = getKlinesFromCoinAnk(symbol, "1h", "binance", LongBoxPeriod, KlineOptions{})
 	}
 
 	if err != nil {

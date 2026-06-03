@@ -65,6 +65,15 @@ function getExchangeTypeFromList(
     return exchange.exchange_type?.toLowerCase() || 'binance'
 }
 
+function getExchangeTestnetFromList(
+    exchangeId: string | undefined,
+    exchanges: Exchange[] | undefined
+): boolean {
+    if (!exchangeId) return false
+    const exchange = exchanges?.find((e) => e.id === exchangeId)
+    return exchange?.testnet === true
+}
+
 // Helper function to check if exchange is a perp-dex type (wallet-based)
 function isPerpDexExchange(exchangeType: string | undefined): boolean {
     if (!exchangeType) return false
@@ -610,6 +619,10 @@ export function TraderDashboardPage({
                                     selectedTrader.exchange_id,
                                     exchanges
                                 )}
+                                exchangeTestnet={getExchangeTestnetFromList(
+                                    selectedTrader.exchange_id,
+                                    exchanges
+                                )}
                                 candidateSymbols={chartCandidateSymbols}
                             />
                         </div>
@@ -640,7 +653,6 @@ export function TraderDashboardPage({
                                                 <tr>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-left">{t('symbol', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center">{t('side', language)}</th>
-                                                    <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center">{t('traderDashboard.operations', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right hidden md:table-cell" title={t('entryPrice', language)}>{t('traderDashboard.entry', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right hidden md:table-cell" title={t('markPrice', language)}>{t('traderDashboard.mark', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right" title={t('quantity', language)}>{t('traderDashboard.qty', language)}</th>
@@ -649,6 +661,7 @@ export function TraderDashboardPage({
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right" title={t('unrealizedPnL', language)}>{t('traderDashboard.uPnL', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right" title={t('traderDashboard.marginPnlPctHint', language)}>{t('traderDashboard.marginPnlPct', language)}</th>
                                                     <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right hidden md:table-cell" title={t('liqPrice', language)}>{t('traderDashboard.liq', language)}</th>
+                                                    <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center">{t('traderDashboard.operations', language)}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -692,6 +705,35 @@ export function TraderDashboardPage({
                                                                 {t(pos.side === 'long' ? 'long' : 'short', language)}
                                                             </span>
                                                         </td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{formatPrice(pos.entry_price)}</td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{formatPrice(pos.mark_price)}</td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main">{formatQuantity(pos.quantity)}</td>
+                                                        <td className="px-1 py-3 font-mono font-bold whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{(pos.quantity * pos.mark_price).toFixed(2)}</td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-center text-nofx-gold hidden md:table-cell">{pos.leverage}x</td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right">
+                                                            <span
+                                                                className={`font-bold ${pos.unrealized_pnl >= 0 ? 'text-nofx-green shadow-nofx-green' : 'text-nofx-red shadow-nofx-red'}`}
+                                                                style={{ textShadow: pos.unrealized_pnl >= 0 ? '0 0 10px rgba(14,203,129,0.3)' : '0 0 10px rgba(246,70,93,0.3)' }}
+                                                            >
+                                                                {pos.unrealized_pnl >= 0 ? '+' : ''}
+                                                                {pos.unrealized_pnl.toFixed(2)}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right">
+                                                            <span
+                                                                className={`font-bold ${(pos.unrealized_pnl_pct ?? 0) >= 0 ? 'text-nofx-green' : 'text-nofx-red'}`}
+                                                                style={{
+                                                                    textShadow:
+                                                                        (pos.unrealized_pnl_pct ?? 0) >= 0
+                                                                            ? '0 0 10px rgba(14,203,129,0.3)'
+                                                                            : '0 0 10px rgba(246,70,93,0.3)',
+                                                                }}
+                                                            >
+                                                                {(pos.unrealized_pnl_pct ?? 0) >= 0 ? '+' : ''}
+                                                                {(pos.unrealized_pnl_pct ?? 0).toFixed(2)}%
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-muted hidden md:table-cell">{formatPrice(pos.liquidation_price)}</td>
                                                         <td className="px-1 py-3 whitespace-nowrap text-center">
                                                             <div
                                                                 className="inline-flex flex-col items-stretch gap-1"
@@ -730,35 +772,6 @@ export function TraderDashboardPage({
                                                                 </button>
                                                             </div>
                                                         </td>
-                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{formatPrice(pos.entry_price)}</td>
-                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{formatPrice(pos.mark_price)}</td>
-                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main">{formatQuantity(pos.quantity)}</td>
-                                                        <td className="px-1 py-3 font-mono font-bold whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">{(pos.quantity * pos.mark_price).toFixed(2)}</td>
-                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-center text-nofx-gold hidden md:table-cell">{pos.leverage}x</td>
-                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right">
-                                                            <span
-                                                                className={`font-bold ${pos.unrealized_pnl >= 0 ? 'text-nofx-green shadow-nofx-green' : 'text-nofx-red shadow-nofx-red'}`}
-                                                                style={{ textShadow: pos.unrealized_pnl >= 0 ? '0 0 10px rgba(14,203,129,0.3)' : '0 0 10px rgba(246,70,93,0.3)' }}
-                                                            >
-                                                                {pos.unrealized_pnl >= 0 ? '+' : ''}
-                                                                {pos.unrealized_pnl.toFixed(2)}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right">
-                                                            <span
-                                                                className={`font-bold ${(pos.unrealized_pnl_pct ?? 0) >= 0 ? 'text-nofx-green' : 'text-nofx-red'}`}
-                                                                style={{
-                                                                    textShadow:
-                                                                        (pos.unrealized_pnl_pct ?? 0) >= 0
-                                                                            ? '0 0 10px rgba(14,203,129,0.3)'
-                                                                            : '0 0 10px rgba(246,70,93,0.3)',
-                                                                }}
-                                                            >
-                                                                {(pos.unrealized_pnl_pct ?? 0) >= 0 ? '+' : ''}
-                                                                {(pos.unrealized_pnl_pct ?? 0).toFixed(2)}%
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-muted hidden md:table-cell">{formatPrice(pos.liquidation_price)}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>

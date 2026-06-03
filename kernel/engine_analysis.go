@@ -198,13 +198,18 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 	logger.Infof("📊 Strategy timeframes: %v, Primary: %s, Kline count: %d", timeframes, primaryTimeframe, klineCount)
 
 	klineExchange := market.NormalizeKlineExchange(ctx.KlineExchange)
+	klineOpts := market.KlineOptions{Simulated: ctx.KlineSimulated}
 	if klineExchange == "okx" {
-		logger.Infof("📊 Kline source: OKX direct → CoinAnk → Binance fallback")
+		if ctx.KlineSimulated {
+			logger.Infof("📊 Kline source: OKX simulated (demo) direct — no live fallback")
+		} else {
+			logger.Infof("📊 Kline source: OKX live direct → CoinAnk → Binance fallback")
+		}
 	}
 
 	// 1. First fetch data for position coins (must fetch)
 	for _, pos := range ctx.Positions {
-		data, err := market.GetWithTimeframes(pos.Symbol, timeframes, primaryTimeframe, klineCount, klineExchange)
+		data, err := market.GetWithTimeframesOptions(pos.Symbol, timeframes, primaryTimeframe, klineCount, klineExchange, klineOpts)
 		if err != nil {
 			logger.Infof("⚠️  Failed to fetch market data for position %s: %v", pos.Symbol, err)
 			continue
@@ -230,7 +235,7 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 		}
 		fetchedCandidateCount++
 
-		data, err := market.GetWithTimeframes(coin.Symbol, timeframes, primaryTimeframe, klineCount, klineExchange)
+		data, err := market.GetWithTimeframesOptions(coin.Symbol, timeframes, primaryTimeframe, klineCount, klineExchange, klineOpts)
 		if err != nil {
 			reason := err.Error()
 			ctx.MarketDataFailures[coin.Symbol] = reason

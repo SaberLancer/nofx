@@ -56,7 +56,7 @@ func (at *AutoTrader) pollPreDecisionTicks() {
 	}
 
 	for _, symbol := range symbols {
-		ticks, err := market.FetchRecentTicks(at.exchange, symbol, limit)
+		ticks, err := market.FetchRecentTicks(at.exchange, symbol, limit, at.klineOptions())
 		if err != nil {
 			at.logWarnf("pre-decision tick fetch failed for %s: %v", symbol, err)
 			continue

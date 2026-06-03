@@ -112,6 +112,7 @@ type Context struct {
 	BTCETHLeverage     int                                `json:"-"`
 	AltcoinLeverage    int                                `json:"-"`
 	KlineExchange      string                             `json:"-"` // preferred kline source, e.g. okx/binance
+	KlineSimulated     bool                               `json:"-"` // OKX demo trading klines when true
 	Timeframes         []string                           `json:"-"`
 	// ReferenceTimeMs is the simulated "now" for backtest (ms). When zero, wall clock is used.
 	ReferenceTimeMs int64 `json:"-"`

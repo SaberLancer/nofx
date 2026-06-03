@@ -246,12 +246,12 @@ export function ChartWithOrders({
 
     // Create candlestick series (using v5 API)
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#0ECB81',
-      downColor: '#F6465D',
-      borderUpColor: '#0ECB81',
-      borderDownColor: '#F6465D',
-      wickUpColor: '#0ECB81',
-      wickDownColor: '#F6465D',
+      upColor: '#F6465D',
+      downColor: '#0ECB81',
+      borderUpColor: '#F6465D',
+      borderDownColor: '#0ECB81',
+      wickUpColor: '#F6465D',
+      wickDownColor: '#0ECB81',
     })
 
     candlestickSeriesRef.current = candlestickSeries as any
