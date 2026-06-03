@@ -18,6 +18,11 @@ import {
   type LivePositionPnL,
 } from '../../lib/positionPnLCompare'
 import { getDecisionActionLabel } from '../../lib/decisionActionLabels'
+import {
+  translateActionError,
+  translateDecisionReasoning,
+  translateExecutionLogLine,
+} from '../../lib/executionLogDisplay'
 import { formatDecisionTimestamps, formatBeijingDateTime } from '../../utils/format'
 
 interface DecisionCardProps {
@@ -251,7 +256,7 @@ function ActionCard({
       {action.reasoning && (
         <div className="mt-3 pt-3" style={{ borderTop: '1px solid #2B3139' }}>
           <div className="text-xs line-clamp-2" style={{ color: '#848E9C' }}>
-            💡 {action.reasoning}
+            💡 {translateDecisionReasoning(action.reasoning, language)}
           </div>
         </div>
       )}
@@ -266,7 +271,10 @@ function ActionCard({
             color: '#F6465D',
           }}
         >
-          ❌ {action.error || t('decisionCard.candidateUnavailableDefault', language)}
+          ❌{' '}
+          {action.error
+            ? translateActionError(action.error, language)
+            : t('decisionCard.candidateUnavailableDefault', language)}
         </div>
       )}
     </div>
@@ -285,10 +293,15 @@ export function DecisionCard({
   const [showInputPrompt, setShowInputPrompt] = useState(false)
   const [showCoT, setShowCoT] = useState(false)
 
-  const cycleDecisionItems = useMemo(
-    () => buildCycleDecisionItems(decision),
-    [decision]
-  )
+  const cycleDecisionItems = useMemo(() => {
+    return buildCycleDecisionItems(decision).map((item) => ({
+      ...item,
+      reasoning: item.reasoning
+        ? translateDecisionReasoning(item.reasoning, language)
+        : item.reasoning,
+      error: item.error ? translateActionError(item.error, language) : item.error,
+    }))
+  }, [decision, language])
 
   const displayCoTTrace = useMemo(() => {
     if (!decision.cot_trace) return ''
@@ -617,7 +630,7 @@ export function DecisionCard({
         >
           {decision.execution_log.map((log, index) => (
             <div key={`${log}-${index}`} style={{ color: '#EAECEF' }}>
-              {log}
+              {translateExecutionLogLine(log, language)}
             </div>
           ))}
         </div>
