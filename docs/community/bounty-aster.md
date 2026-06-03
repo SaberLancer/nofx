@@ -30,8 +30,8 @@ We're looking for contributors to add Aster exchange support to NOFX AI Trading 
       "id": "aster_trader",
       "name": "Aster AI Trader",
       "exchange": "aster",  // NEW
-      "aster_api_key": "xxx",
-      "aster_secret_key": "xxx",
+      "aster_api_key": "你的 API Key",
+      "aster_secret_key": "你的 Secret Key",
       "ai_model": "deepseek",
       "initial_balance": 1000.0
     }

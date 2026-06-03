@@ -18,7 +18,7 @@ func AppendConfiguredPnLThresholds(sb *strings.Builder, rc store.RiskControlConf
 
 	if lang == LangChinese {
 		sb.WriteString("## 持仓盈利率风控（Margin PnL%，相对保证金、已含杠杆）\n\n")
-		sb.WriteString("**系统会在每轮周期与每分钟监控中自动执行**锁盈/止损/峰值回撤（CODE ENFORCED），不依赖 AI 是否及时减仓；AI 仍可做额外判断。\n\n")
+		sb.WriteString("**系统会在每轮扫描周期拉取持仓后自动执行**锁盈/止损/峰值回撤（CODE ENFORCED），并在仪表盘拉账户时复检；不依赖 AI 是否及时减仓；AI 仍可做额外判断。\n\n")
 		sb.WriteString("减仓/平仓判断**必须**使用「当前持仓」的 **Margin PnL%**，不得用标的涨跌幅。\n\n")
 		sb.WriteString(fmt.Sprintf("- **锁盈（第一档）**：Margin PnL%% ≥ %+.1f%% → 开始锁盈，建议 `close_ratio=%.2f` 部分减仓或上移止损\n", lock1, ratio))
 		sb.WriteString(fmt.Sprintf("- **锁盈（第二档）**：Margin PnL%% ≥ %+.1f%% → 再减仓 30%%~50%%，收紧止损保护剩余仓位\n", lock2))
@@ -27,7 +27,7 @@ func AppendConfiguredPnLThresholds(sb *strings.Builder, rc store.RiskControlConf
 		sb.WriteString(fmt.Sprintf("- **峰值回撤**：Peak PnL%% ≥ %+.1f%% 且从峰值回撤 ≥ %.1f 个百分点 → 减仓/平仓\n\n", peakMin, pullPts))
 	} else {
 		sb.WriteString("## Position PnL% Risk Rules (Margin PnL%, leverage included)\n\n")
-		sb.WriteString("**The system auto-enforces** lock-profit / stop-loss / peak pullback each cycle and every minute (CODE ENFORCED), independent of AI timing.\n\n")
+		sb.WriteString("**The system auto-enforces** lock-profit / stop-loss / peak pullback after each scan-cycle position refresh and on account API fetch (CODE ENFORCED), independent of AI timing.\n\n")
 		sb.WriteString("Use **Margin PnL%** from Current Positions for reduce/exit — not raw price change.\n\n")
 		sb.WriteString(fmt.Sprintf("- **Lock profit (tier 1)**: Margin PnL%% ≥ %+.1f%% → start lock; suggest `close_ratio=%.2f`\n", lock1, ratio))
 		sb.WriteString(fmt.Sprintf("- **Lock profit (tier 2)**: Margin PnL%% ≥ %+.1f%% → reduce 30%%~50%% more, tighten stop\n", lock2))

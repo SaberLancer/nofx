@@ -6,6 +6,10 @@
 
 本文档详细描述 NOFX 策略模块的完整数据流程，包括币种选择、数据组装、提示词构建、AI 请求、响应解析和决策执行。
 
+> **路径说明（2026-06）**  
+> 决策引擎已迁移至 `kernel/`（如 `kernel/engine_prompt.go`、`kernel/engine_analysis.go`、`kernel/engine_position.go`）。下文若仍出现 `decision/engine.go`，请按同名职责在 `kernel/` 中查找。  
+> **持仓盈利率强制平仓**（扫描周期与账户拉取时自动检查）的独立说明见：[POSITION_PNL_ENFORCEMENT.zh-CN.md](POSITION_PNL_ENFORCEMENT.zh-CN.md)。
+
 ---
 
 ## 完整数据流程图
@@ -24,6 +28,7 @@
 2. 数据组装 (buildTradingContext)
    ├─ 账户余额 → equity, available, unrealizedPnL
    ├─ 当前持仓 → symbol, side, entry, mark, qty, leverage
+   ├─ 计算 Margin 盈亏% → 代码强制平仓/减仓（见 POSITION_PNL_ENFORCEMENT）
    ├─ K线数据 → OHLCV (5m, 15m, 1h, 4h)
    ├─ 技术指标 → EMA, MACD, RSI, ATR, Volume
    ├─ 链上数据 → OI, Funding Rate
@@ -587,7 +592,9 @@ sort.SliceStable(decisions, func(i, j int) bool {
 
 ### 7.2 风控强制执行
 
-**文件:** `trader/auto_trader.go:1769-1851`
+#### 7.2.1 开仓阶段（代码强制）
+
+**文件:** `trader/auto_trader_orders.go`、`trader/auto_trader_risk.go`
 
 | 检查项 | 方法 | 动作 |
 |--------|------|------|
@@ -595,6 +602,22 @@ sort.SliceStable(decisions, func(i, j int) bool {
 | 仓位价值上限 | `enforcePositionValueRatio()` | 自动缩减仓位 |
 | 最小仓位 | `enforceMinPositionSize()` | 拒绝过小订单 |
 | 保证金调整 | 自动计算 | 根据可用余额调整 |
+
+#### 7.2.2 持仓阶段：盈利率强制平仓（代码强制）
+
+**文件:** `trader/auto_trader_pnl_enforce.go`  
+**完整说明:** [POSITION_PNL_ENFORCEMENT.zh-CN.md](POSITION_PNL_ENFORCEMENT.zh-CN.md)
+
+| 规则 | 默认条件 | 动作 |
+|------|----------|------|
+| 亏损止损 | Margin 盈亏% ≤ -5% | 全平 |
+| 峰值回撤 | 峰值 ≥ 10% 且从峰值回落 ≥ 4 个百分点 | 全平 |
+| 锁盈二档 | 盈亏% ≥ 12%，未执行过二档 | 减仓 40% |
+| 锁盈一档 | 盈亏% ≥ 8%，未执行过一档 | 减仓 30%（可配置） |
+
+**检查时机：** 每轮 `buildTradingContext`（扫描周期）；以及 `GET /api/account` / 账户快照拉取时。无独立「每分钟」定时任务。网格策略不启用。
+
+**数据来源：** 交易所持仓 API（数量、标记价、未实现盈亏、杠杆）；峰值来自内存 + 数据库。
 
 ### 7.3 订单执行
 
@@ -659,7 +682,10 @@ at.store.Decision().LogDecision(record)
 | **思维链提取** | `decision/engine.go:1327-1345` | `extractCoTTrace()` |
 | **JSON提取** | `decision/engine.go:1347-1408` | `extractDecisions()` |
 | **决策验证** | `decision/engine.go:1480-1602` | `validateDecisions()` |
-| **风控执行** | `trader/auto_trader.go:1769-1851` | `enforceMaxPositions()`, `enforcePositionValueRatio()` |
+| **开仓风控** | `trader/auto_trader_risk.go` | `enforceMaxPositions()`, `enforcePositionValueRatio()` |
+| **持仓盈利率强制** | `trader/auto_trader_pnl_enforce.go` | `onPositionsUpdated()`, `evaluatePositionPnLAction()` |
+| **系统/用户提示词** | `kernel/engine_prompt.go` | `BuildSystemPrompt()` |
+| **AI 决策** | `kernel/engine_analysis.go` | `GetFullDecisionWithStrategy()` |
 | **策略配置** | `store/strategy.go` | `StrategyConfig`, `RiskControlConfig` |
 | **数据提供者** | `provider/data_provider.go` | `GetAI500Data()`, `GetOITopPositions()` |
 
@@ -705,17 +731,25 @@ type StrategyConfig struct {
         }
     }
 
-    // 风控配置
+    // 风控配置（节选；完整字段见 store/strategy.go）
     RiskControl struct {
-        MaxPositions               int     // 最大持仓数
-        BTCETHMaxLeverage          int     // BTC/ETH最大杠杆
-        AltcoinMaxLeverage         int     // 山寨币最大杠杆
-        BTCETHMaxPositionValueRatio float64 // BTC/ETH仓位比例上限
-        AltcoinMaxPositionValueRatio float64 // 山寨币仓位比例上限
-        MaxMarginUsage             float64 // 最大保证金使用率
-        MinPositionSize            float64 // 最小仓位
-        MinRiskRewardRatio         float64 // 最小风险回报比
-        MinConfidence              int     // 最小置信度
+        MaxPositions               int     // 最大持仓数（代码强制）
+        BTCETHMaxLeverage          int     // BTC/ETH最大杠杆（AI 引导）
+        AltcoinMaxLeverage         int     // 山寨币最大杠杆（AI 引导）
+        BTCETHMaxPositionValueRatio float64 // BTC/ETH仓位比例上限（代码强制）
+        AltcoinMaxPositionValueRatio float64 // 山寨币仓位比例上限（代码强制）
+        MaxMarginUsage             float64 // 最大保证金使用率（代码强制）
+        MinPositionSize            float64 // 最小仓位（代码强制）
+        MinRiskRewardRatio         float64 // 最小风险回报比（AI 引导）
+        MinConfidence              int     // 最小置信度（AI 引导）
+        // 持仓 Margin 盈亏% 规则（代码强制平仓见 POSITION_PNL_ENFORCEMENT.zh-CN.md）
+        StopLossPnLPct             float64 // 亏损止损线，如 -5
+        LockProfitPnLPct           float64 // 锁盈一档，如 8
+        LockProfitReduceRatio      float64 // 一档减仓比例，如 0.3
+        LockProfitSecondPnLPct     float64 // 锁盈二档，如 12
+        PeakMinForPullback         float64 // 峰值回撤门槛，如 10
+        PeakPullbackPts            float64 // 从峰值回落幅度（个百分点），如 4
+        ExitProtectPnLPct          float64 // 保护利润线（仅 AI 提示，代码不强制）
     }
 
     // 提示词部分

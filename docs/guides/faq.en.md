@@ -62,7 +62,7 @@ Yes! You can:
 - Customize system prompts (advanced)
 
 ### What's the maximum number of concurrent positions?
-Default: **3 positions**. This is a soft limit defined in the AI prompt, not hard-coded. See `decision/engine.go:266`.
+Default: **3 positions** (configurable in strategy risk control; enforced in code on open). See `store/strategy.go` and `trader/auto_trader_risk.go`.
 
 ---
 

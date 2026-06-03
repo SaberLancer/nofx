@@ -37,10 +37,10 @@ For enhanced security:
 
 ## Save Your Keys
 
-After creation, you'll have:
-- **API Key**: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-- **Secret Key**: `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
-- **Passphrase**: Your created passphrase
+After creation, you'll have (use placeholders in docs/screenshots — never paste real values):
+- **API Key**: your API Key
+- **Secret Key**: your Secret Key
+- **Passphrase**: your Passphrase
 
 ⚠️ **Important**: Save the Secret Key immediately - it's only shown once!
 

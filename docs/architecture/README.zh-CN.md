@@ -56,7 +56,8 @@ NOFX 是一个支持加密货币和美股市场的全栈 AI 交易平台：
 
 | 模块 | 描述 | 文档 |
 |------|------|------|
-| **策略工作室** | 策略配置、币种选择、数据组装、AI 提示词 | [STRATEGY_MODULE.md](STRATEGY_MODULE.md) |
+| **策略工作室** | 策略配置、币种选择、数据组装、AI 提示词 | [STRATEGY_MODULE.zh-CN.md](STRATEGY_MODULE.zh-CN.md) |
+| **持仓盈利率强制平仓** | 扫描周期与账户拉取时的自动减仓/全平 | [POSITION_PNL_ENFORCEMENT.zh-CN.md](POSITION_PNL_ENFORCEMENT.zh-CN.md) |
 
 ### 模块概览
 
@@ -66,9 +67,9 @@ NOFX 是一个支持加密货币和美股市场的全栈 AI 交易平台：
 - 市场数据指标（K线、EMA、MACD、RSI、ATR）
 - 提示词构建（系统提示词、用户提示词、分段配置）
 - AI 响应解析和决策执行
-- 风险控制强制执行
+- 风险控制强制执行（开仓限额 + 持仓 Margin 盈亏% 自动平仓）
 
-**[阅读完整文档 →](STRATEGY_MODULE.md)**
+**[策略模块 →](STRATEGY_MODULE.zh-CN.md)** · **[持仓盈利率强制平仓 →](POSITION_PNL_ENFORCEMENT.zh-CN.md)**
 
 ---
 
@@ -118,7 +119,8 @@ nofx/
 
 ## 快速链接
 
-- [策略模块](STRATEGY_MODULE.md) - 策略如何运作
+- [策略模块](STRATEGY_MODULE.zh-CN.md) - 策略如何运作
+- [持仓盈利率强制平仓](POSITION_PNL_ENFORCEMENT.zh-CN.md) - 何时检查、规则与数据来源
 - [快速开始](../getting-started/README.zh-CN.md) - 部署指南
 - [常见问题](../faq/README.md) - FAQ
 

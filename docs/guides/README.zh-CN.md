@@ -69,7 +69,7 @@ sudo apt-get install libta-lib0-dev
 **3. 配置**
 - 先在测试网测试
 - 逐步增加交易金额
-- 调整扫描间隔（推荐 3-5 分钟）
+- 调整扫描间隔（推荐 3-5 分钟）；持仓盈利率强制平仓在每次扫描拉持仓后执行，详见 [持仓盈利率强制平仓](../architecture/POSITION_PNL_ENFORCEMENT.zh-CN.md)
 - 初学者使用默认币种列表
 
 ---

@@ -57,6 +57,7 @@ NOFX is a full-stack AI trading platform for cryptocurrency and US stock markets
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | **Strategy Studio** | Strategy configuration, coin selection, data assembly, AI prompts | [STRATEGY_MODULE.md](STRATEGY_MODULE.md) |
+| **Position PnL enforcement** | Auto reduce/close on scan interval and account fetch | [POSITION_PNL_ENFORCEMENT.md](POSITION_PNL_ENFORCEMENT.md) |
 
 ### Module Overview
 
@@ -66,9 +67,9 @@ Complete strategy configuration system including:
 - Market data indicators (K-lines, EMA, MACD, RSI, ATR)
 - Prompt construction (system prompt, user prompt, sections)
 - AI response parsing and decision execution
-- Risk control enforcement
+- Risk control enforcement (open limits + margin PnL auto close)
 
-**[Read Full Documentation →](STRATEGY_MODULE.md)**
+**[Strategy module →](STRATEGY_MODULE.md)** · **[Position PnL enforcement →](POSITION_PNL_ENFORCEMENT.md)**
 
 ---
 
@@ -119,6 +120,7 @@ nofx/
 ## Quick Links
 
 - [Strategy Module](STRATEGY_MODULE.md) - How strategies work
+- [Position PnL Enforcement](POSITION_PNL_ENFORCEMENT.md) - When checks run, rules, data sources
 - [Getting Started](../getting-started/README.md) - Setup guide
 - [FAQ](../faq/README.md) - Frequently asked questions
 

@@ -6,6 +6,9 @@
 
 This document describes the complete data flow of the NOFX strategy module, including coin selection, data assembly, prompt construction, AI request, response parsing, and decision execution.
 
+> **Path note (2026-06):** The decision engine lives under `kernel/` (e.g. `kernel/engine_prompt.go`, `kernel/engine_analysis.go`). Legacy references to `decision/engine.go` map to the same responsibilities in `kernel/`.  
+> **Position PnL enforcement** (auto reduce/close on scan and account fetch): [POSITION_PNL_ENFORCEMENT.md](POSITION_PNL_ENFORCEMENT.md).
+
 ---
 
 ## Complete Data Flow
@@ -587,7 +590,9 @@ sort.SliceStable(decisions, func(i, j int) bool {
 
 ### 7.2 Risk Control Enforcement
 
-**File:** `trader/auto_trader.go:1769-1851`
+#### 7.2.1 On open (code enforced)
+
+**Files:** `trader/auto_trader_orders.go`, `trader/auto_trader_risk.go`
 
 | Check | Method | Action |
 |-------|--------|--------|
@@ -595,6 +600,20 @@ sort.SliceStable(decisions, func(i, j int) bool {
 | Position value cap | `enforcePositionValueRatio()` | Auto reduce size |
 | Min position | `enforceMinPositionSize()` | Reject small orders |
 | Margin adjustment | Auto calculate | Adjust by available balance |
+
+#### 7.2.2 While holding: margin PnL enforcement (code enforced)
+
+**File:** `trader/auto_trader_pnl_enforce.go`  
+**Details:** [POSITION_PNL_ENFORCEMENT.md](POSITION_PNL_ENFORCEMENT.md)
+
+| Rule | Default | Action |
+|------|---------|--------|
+| Stop loss | Margin PnL % ≤ -5% | Full close |
+| Peak pullback | Peak ≥ 10%, drop ≥ 4 pp | Full close |
+| Lock tier 2 | PnL % ≥ 12%, tier 2 not applied | 40% reduce |
+| Lock tier 1 | PnL % ≥ 8%, tier 1 not applied | 30% reduce (configurable) |
+
+**When:** each `buildTradingContext` (scan interval) and account API fetch. No dedicated one-minute job. Grid mode disabled.
 
 ### 7.3 Order Execution
 
@@ -659,7 +678,10 @@ at.store.Decision().LogDecision(record)
 | **CoT Extract** | `decision/engine.go:1327-1345` | `extractCoTTrace()` |
 | **JSON Extract** | `decision/engine.go:1347-1408` | `extractDecisions()` |
 | **Decision Valid** | `decision/engine.go:1480-1602` | `validateDecisions()` |
-| **Risk Enforce** | `trader/auto_trader.go:1769-1851` | `enforceMaxPositions()`, `enforcePositionValueRatio()` |
+| **Open risk** | `trader/auto_trader_risk.go` | `enforceMaxPositions()`, `enforcePositionValueRatio()` |
+| **Position PnL enforce** | `trader/auto_trader_pnl_enforce.go` | `onPositionsUpdated()`, `evaluatePositionPnLAction()` |
+| **System/user prompts** | `kernel/engine_prompt.go` | `BuildSystemPrompt()` |
+| **AI decision** | `kernel/engine_analysis.go` | `GetFullDecisionWithStrategy()` |
 | **Strategy Config** | `store/strategy.go` | `StrategyConfig`, `RiskControlConfig` |
 | **Data Provider** | `provider/data_provider.go` | `GetAI500Data()`, `GetOITopPositions()` |
 

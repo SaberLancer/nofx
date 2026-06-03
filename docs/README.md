@@ -83,6 +83,8 @@ Welcome to the NOFX documentation! This page helps you find the right documentat
 |----------|-------------|------|
 | [Architecture Overview (EN)](architecture/README.md) | System architecture, modules, and design | 系统架构、模块和设计 |
 | [Architecture Overview (中文)](architecture/README.zh-CN.md) | 系统架构、模块和设计 | System architecture overview |
+| [Position PnL Enforcement (EN)](architecture/POSITION_PNL_ENFORCEMENT.md) | When code auto-closes/reduces positions | 持仓盈利率强制平仓时机与规则 |
+| [Position PnL Enforcement (中文)](architecture/POSITION_PNL_ENFORCEMENT.zh-CN.md) | 代码自动减仓/全平说明 | Auto close/reduce by margin PnL % |
 | API Reference *(coming soon)* | HTTP API documentation | HTTP API 文档 |
 | Database Schema *(coming soon)* | SQLite database structure | SQLite 数据库结构 |
 | Testing Guide *(coming soon)* | How to write tests | 如何编写测试 |

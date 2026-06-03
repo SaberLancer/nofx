@@ -64,14 +64,16 @@ Total PNL %:     +15%
 
 **来源：** 直接从交易所API获取 `totalUnrealizedProfit`
 
-#### 3.3 单个持仓的PNL%
+#### 3.3 单个持仓的PNL%（Margin 盈亏%）
 
 **计算公式：**
 ```
 Position PNL % = (Unrealized PnL / Margin Used) × 100%
 ```
 
-其中：`Margin Used = Position Value / Leverage`
+其中：`Margin Used = Position Value / Leverage`（实盘用 `数量 × 标记价 / 杠杆` 估算，见交易所持仓 API）
+
+**代码强制平仓**使用该指标与策略风控阈值比较，触发时机与规则见 [architecture/POSITION_PNL_ENFORCEMENT.zh-CN.md](architecture/POSITION_PNL_ENFORCEMENT.zh-CN.md)。
 
 ---
 

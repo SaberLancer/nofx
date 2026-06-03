@@ -23,11 +23,11 @@
       "ai_model": "custom",
       "exchange": "binance",
 
-      "binance_api_key": "your_binance_api_key",
-      "binance_secret_key": "your_binance_secret_key",
+      "binance_api_key": "你的 Binance API Key",
+      "binance_secret_key": "你的 Binance Secret Key",
 
       "custom_api_url": "https://api.openai.com/v1",
-      "custom_api_key": "sk-your-openai-api-key",
+      "custom_api_key": "你的 API Key",
       "custom_model_name": "gpt-4o",
 
       "initial_balance": 1000,
@@ -54,7 +54,7 @@
 {
   "ai_model": "custom",
   "custom_api_url": "https://api.openai.com/v1",
-  "custom_api_key": "sk-proj-xxxxx",
+  "custom_api_key": "你的 API Key",
   "custom_model_name": "gpt-4o"
 }
 ```
@@ -65,7 +65,7 @@
 {
   "ai_model": "custom",
   "custom_api_url": "https://openrouter.ai/api/v1",
-  "custom_api_key": "sk-or-xxxxx",
+  "custom_api_key": "你的 API Key",
   "custom_model_name": "anthropic/claude-3.5-sonnet"
 }
 ```
@@ -87,7 +87,7 @@
 {
   "ai_model": "custom",
   "custom_api_url": "https://your-resource.openai.azure.com/openai/deployments/your-deployment",
-  "custom_api_key": "your-azure-api-key",
+  "custom_api_key": "你的 API Key",
   "custom_model_name": "gpt-4"
 }
 ```
@@ -100,7 +100,7 @@
 {
   "ai_model": "custom",
   "custom_api_url": "https://api.example.com/v2/ai/chat/completions#",
-  "custom_api_key": "your-api-key",
+  "custom_api_key": "你的 API Key",
   "custom_model_name": "custom-model"
 }
 ```
@@ -155,7 +155,7 @@
       "id": "claude_trader",
       "ai_model": "custom",
       "custom_api_url": "https://openrouter.ai/api/v1",
-      "custom_api_key": "sk-or-xxxxx",
+      "custom_api_key": "你的 API Key",
       "custom_model_name": "anthropic/claude-3.5-sonnet",
       ...
     }
