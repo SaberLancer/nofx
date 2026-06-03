@@ -24,6 +24,7 @@ type OKXTrade struct {
 	FillQty     float64 // In contracts
 	FillQtyBase float64 // In base asset (BTC, ETH, etc)
 	Fee         float64
+	FillPnl     float64
 	FeeAsset    string
 	ExecTime    time.Time
 	IsMaker     bool

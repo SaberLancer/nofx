@@ -344,6 +344,9 @@ Returns: [{"symbol":"<string>","side":"long|short","size":<float>,"entry_price":
 			s.routeWithSchema(protected, "GET", "/positions/history", "Closed position history",
 				`Query: ?trader_id=<EXACT trader_id from GET /api/my-traders>&limit=<int, default 20>`,
 				s.handlePositionHistory)
+			s.routeWithSchema(protected, "GET", "/positions/history/operations", "Detailed close/reduce operations for one history row",
+				`Query: ?trader_id=<EXACT trader_id>&symbol=<symbol>&side=<LONG|SHORT>&entry_time=<rfc3339|ms>&exit_time=<rfc3339|ms>&limit=<int, default 100>`,
+				s.handlePositionCloseOperations)
 			s.routeWithSchema(protected, "GET", "/trades", "Trade records",
 				`Query: ?trader_id=<EXACT trader_id from GET /api/my-traders>&limit=<int, default 20>`,
 				s.handleTrades)

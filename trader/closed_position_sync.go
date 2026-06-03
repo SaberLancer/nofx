@@ -64,12 +64,13 @@ func SyncClosedPositionsFromExchange(
 			continue
 		}
 		storeRecords = append(storeRecords, store.ClosedPnLRecord{
-			Symbol:      symbol,
-			Side:        r.Side,
-			EntryPrice:  r.EntryPrice,
-			ExitPrice:   r.ExitPrice,
-			Quantity:    r.Quantity,
-			RealizedPnL: r.RealizedPnL,
+			Symbol:          symbol,
+			Side:            r.Side,
+			EntryPrice:      r.EntryPrice,
+			ExitPrice:       r.ExitPrice,
+			Quantity:        r.Quantity,
+			MaxOpenQuantity: r.MaxOpenQuantity,
+			RealizedPnL:     r.RealizedPnL,
 			Fee:         r.Fee,
 			Leverage:    r.Leverage,
 			EntryTime:   r.EntryTime.UTC().UnixMilli(),

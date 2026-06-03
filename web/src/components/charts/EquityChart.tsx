@@ -36,6 +36,14 @@ interface EquityChartProps {
   embedded?: boolean // 嵌入模式（不显示外层卡片）
 }
 
+function formatChartDateTime(timestamp: string | undefined): string {
+  if (!timestamp) return '—'
+  const d = new Date(timestamp)
+  if (Number.isNaN(d.getTime())) return '—'
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
 export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
   const { language } = useLanguage()
   const { user, token } = useAuth()
@@ -150,6 +158,7 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
         hour: '2-digit',
         minute: '2-digit',
       }),
+      timestamp: point.timestamp,
       value: displayMode === 'dollar' ? point.total_equity : parseFloat(pnlPct),
       cycle: point.cycle_number ?? index + 1,
       raw_equity: point.total_equity,
@@ -191,6 +200,9 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
           className="rounded p-3 shadow-xl"
           style={{ background: '#1E2329', border: '1px solid #2B3139' }}
         >
+          <div className="text-xs mb-1" style={{ color: '#848E9C' }}>
+            {formatChartDateTime(data.timestamp)}
+          </div>
           <div className="text-xs mb-1" style={{ color: '#848E9C' }}>
             Cycle #{data.cycle != null ? data.cycle : '—'}
           </div>

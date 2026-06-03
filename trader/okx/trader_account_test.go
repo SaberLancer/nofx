@@ -63,14 +63,15 @@ func TestOKXPositionHistoryRowToRecord_UsesGrossPnl(t *testing.T) {
 	}
 	row := okxPositionHistoryRow{
 		InstID:        "ETH-USDT-SWAP",
-		PosSide:       "long",
-		OpenAvgPx:     "2002.29",
-		CloseAvgPx:    "2005.7084314",
-		CloseTotalPos: "62.718",
-		Pnl:           "214.36",
-		RealizedPnl:   "88.67",
-		PnlRatio:      "0.0085",
-		Fee:           "-125.69",
+		PosSide:       "short",
+		OpenAvgPx:     "1898.27",
+		CloseAvgPx:    "1878.27",
+		OpenMaxPos:    "15.806",
+		CloseTotalPos: "15.806",
+		Pnl:           "286.41",
+		RealizedPnl:   "280.00",
+		PnlRatio:      "0.0477",
+		Fee:           "-6.41",
 		FundingFee:    "0",
 		Lever:         "5",
 		CTime:         "1700000000000",
@@ -82,16 +83,22 @@ func TestOKXPositionHistoryRowToRecord_UsesGrossPnl(t *testing.T) {
 	if !ok {
 		t.Fatal("expected valid record")
 	}
-	if rec.RealizedPnL != 214.36 {
-		t.Fatalf("expected gross pnl 214.36, got %v", rec.RealizedPnL)
+	if rec.RealizedPnL != 286.41 {
+		t.Fatalf("expected gross pnl 286.41, got %v", rec.RealizedPnL)
 	}
-	if rec.NetRealizedPnL != 88.67 {
-		t.Fatalf("expected net pnl 88.67, got %v", rec.NetRealizedPnL)
+	if rec.NetRealizedPnL != 280.00 {
+		t.Fatalf("expected net pnl 280.00, got %v", rec.NetRealizedPnL)
 	}
-	if rec.Fee != 125.69 {
-		t.Fatalf("expected fee 125.69, got %v", rec.Fee)
+	if rec.MaxOpenQuantity != 15.806 {
+		t.Fatalf("expected max open qty 15.806, got %v", rec.MaxOpenQuantity)
 	}
-	wantRatio := 214.36 / (2002.29 * 62.718 / 5)
+	if rec.Quantity != 15.806 {
+		t.Fatalf("expected close qty 15.806, got %v", rec.Quantity)
+	}
+	if rec.Fee != 6.41 {
+		t.Fatalf("expected fee 6.41, got %v", rec.Fee)
+	}
+	wantRatio := 280.00 / (1898.27 * 15.806 / 5)
 	if math.Abs(rec.PnlRatio-wantRatio) > 0.0001 {
 		t.Fatalf("expected gross roi ~%v, got %v", wantRatio, rec.PnlRatio)
 	}

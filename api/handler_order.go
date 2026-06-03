@@ -1,8 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"nofx/logger"
@@ -202,30 +205,40 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 		limit = l
 	}
 
-	// OKX: use exchange positions-history (authoritative closed positions with entry/exit prices).
-	if at.GetExchange() == "okx" {
-		if underlying := at.GetUnderlyingTrader(); underlying != nil {
-			start := time.Now().UTC().Add(-30 * 24 * time.Hour)
-			records, err := underlying.GetClosedPnL(start, limit)
-			if err != nil {
-				SafeInternalError(c, "Fetch OKX position history", err)
-				return
-			}
-			positions := store.ClosedPnLRecordsToTraderPositions(
-				at.GetID(), at.GetExchangeID(), at.GetExchange(), toStoreClosedRecords(records),
-			)
-			stats := store.ComputeFullStatsFromPositions(positions)
-			symbolStats := store.ComputeSymbolStatsFromPositions(positions, 10)
-			directionStats := store.ComputeDirectionStatsFromPositions(positions)
-			c.JSON(http.StatusOK, gin.H{
-				"positions":       positionsToAPIJSON(positions),
-				"stats":           stats,
-				"symbol_stats":    symbolStats,
-				"direction_stats": directionStats,
-				"source":          "okx_positions_history",
-			})
+	// OKX: always use exchange positions-history (authoritative closed positions).
+	if strings.EqualFold(at.GetExchange(), "okx") {
+		underlying := at.GetUnderlyingTrader()
+		if underlying == nil {
+			SafeInternalError(c, "Fetch OKX position history", fmt.Errorf("OKX trader not initialized"))
 			return
 		}
+
+		days := 90
+		if d, err := strconv.Atoi(c.DefaultQuery("days", "90")); err == nil && d > 0 && d <= 365 {
+			days = d
+		}
+		start := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
+
+		records, err := underlying.GetClosedPnL(start, limit)
+		if err != nil {
+			SafeInternalError(c, "Fetch OKX position history", err)
+			return
+		}
+		positions := store.ClosedPnLRecordsToTraderPositions(
+			at.GetID(), at.GetExchangeID(), at.GetExchange(), toStoreClosedRecords(records),
+		)
+		sortPositionsByExitTimeDesc(positions)
+		stats := store.ComputeFullStatsFromPositions(positions)
+		symbolStats := store.ComputeSymbolStatsFromPositions(positions, 10)
+		directionStats := store.ComputeDirectionStatsFromPositions(positions)
+		c.JSON(http.StatusOK, gin.H{
+			"positions":       positionsToAPIJSON(positions),
+			"stats":           stats,
+			"symbol_stats":    symbolStats,
+			"direction_stats": directionStats,
+			"source":          "okx_positions_history",
+		})
+		return
 	}
 
 	// Get store
@@ -270,16 +283,169 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 	})
 }
 
+// handlePositionCloseOperations returns detailed reduce/close execution records for a historical position row.
+func (s *Server) handlePositionCloseOperations(c *gin.Context) {
+	_, traderID, err := s.getTraderFromQuery(c)
+	if err != nil {
+		SafeBadRequest(c, "Invalid trader ID")
+		return
+	}
+
+	at, err := s.traderManager.GetTrader(traderID)
+	if err != nil {
+		SafeNotFound(c, "Trader")
+		return
+	}
+
+	symbol := market.Normalize(c.Query("symbol"))
+	side := c.Query("side")
+	if symbol == "" || side == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "symbol and side are required"})
+		return
+	}
+
+	entryTimeMs, err := parseHistoryTimeToMs(c.Query("entry_time"))
+	if err != nil {
+		SafeBadRequest(c, "Invalid entry_time")
+		return
+	}
+	exitTimeMs, err := parseHistoryTimeToMs(c.Query("exit_time"))
+	if err != nil {
+		SafeBadRequest(c, "Invalid exit_time")
+		return
+	}
+
+	limit := 100
+	if limitStr := c.DefaultQuery("limit", "100"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
+			limit = l
+		}
+	}
+
+	if strings.EqualFold(at.GetExchange(), "okx") {
+		underlying := at.GetUnderlyingTrader()
+		if underlying == nil {
+			SafeInternalError(c, "Get position close operations", fmt.Errorf("OKX trader not initialized"))
+			return
+		}
+		provider, ok := underlying.(tradpkg.PositionCloseOrdersProvider)
+		if !ok {
+			SafeInternalError(c, "Get position close operations", fmt.Errorf("OKX close orders provider unavailable"))
+			return
+		}
+
+		entryTime := time.UnixMilli(entryTimeMs).UTC()
+		exitTime := time.UnixMilli(exitTimeMs).UTC()
+		records, err := provider.GetPositionCloseOrders(symbol, side, entryTime, exitTime, limit)
+		if err != nil {
+			SafeInternalError(c, "Fetch OKX position close orders", err)
+			return
+		}
+
+		out := make([]map[string]interface{}, 0, len(records))
+		for i, r := range records {
+			out = append(out, map[string]interface{}{
+				"id":                i + 1,
+				"exchange_order_id": r.ExchangeOrderID,
+				"order_action":      r.OrderAction,
+				"position_side":     r.PositionSide,
+				"status":            r.Status,
+				"exec_quantity":     r.ExecQuantity,
+				"exec_price":        r.ExecPrice,
+				"avg_fill_price":    r.ExecPrice,
+				"fee":               r.Fee,
+				"realized_pnl":      r.RealizedPnL,
+				"filled_at":         r.FilledAt.UTC().Format(time.RFC3339),
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"operations": out,
+			"count":      len(out),
+			"symbol":     symbol,
+			"side":       side,
+			"source":     "okx_fills_history",
+		})
+		return
+	}
+
+	st := at.GetStore()
+	if st == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Store not available"})
+		return
+	}
+
+	orders, err := st.Order().GetCloseOperationsByWindow(at.GetID(), symbol, side, entryTimeMs, exitTimeMs, limit)
+	if err != nil {
+		SafeInternalError(c, "Get position close operations", err)
+		return
+	}
+
+	out := make([]map[string]interface{}, 0, len(orders))
+	for _, o := range orders {
+		if o == nil {
+			continue
+		}
+		execQty := o.FilledQuantity
+		if execQty <= 0 {
+			execQty = o.Quantity
+		}
+		execPrice := o.AvgFillPrice
+		if execPrice <= 0 {
+			execPrice = o.Price
+		}
+		out = append(out, map[string]interface{}{
+			"id":                o.ID,
+			"exchange_order_id": o.ExchangeOrderID,
+			"order_action":      o.OrderAction,
+			"position_side":     o.PositionSide,
+			"side":              o.Side,
+			"status":            o.Status,
+			"quantity":          o.Quantity,
+			"filled_quantity":   o.FilledQuantity,
+			"exec_quantity":     execQty,
+			"price":             o.Price,
+			"avg_fill_price":    o.AvgFillPrice,
+			"exec_price":        execPrice,
+			"created_at":        msToRFC3339(o.CreatedAt),
+			"filled_at":         msToRFC3339(o.FilledAt),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"operations": out,
+		"count":      len(out),
+		"symbol":     symbol,
+		"side":       side,
+		"source":     "local_db",
+	})
+}
+
+func parseHistoryTimeToMs(v string) (int64, error) {
+	if v == "" {
+		return 0, nil
+	}
+	if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return ms, nil
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return 0, err
+	}
+	return t.UnixMilli(), nil
+}
+
 func toStoreClosedRecords(records []tradpkg.ClosedPnLRecord) []store.ClosedPnLRecord {
 	out := make([]store.ClosedPnLRecord, len(records))
 	for i, r := range records {
 		out[i] = store.ClosedPnLRecord{
-			Symbol:         r.Symbol,
-			Side:           r.Side,
-			EntryPrice:     r.EntryPrice,
-			ExitPrice:      r.ExitPrice,
-			Quantity:       r.Quantity,
-			RealizedPnL:    r.RealizedPnL,
+			Symbol:          r.Symbol,
+			Side:            r.Side,
+			EntryPrice:      r.EntryPrice,
+			ExitPrice:       r.ExitPrice,
+			Quantity:        r.Quantity,
+			MaxOpenQuantity: r.MaxOpenQuantity,
+			RealizedPnL:     r.RealizedPnL,
 			NetRealizedPnL: r.NetRealizedPnL,
 			PnlRatio:       r.PnlRatio,
 			Fee:            r.Fee,
@@ -293,6 +459,18 @@ func toStoreClosedRecords(records []tradpkg.ClosedPnLRecord) []store.ClosedPnLRe
 		}
 	}
 	return out
+}
+
+func sortPositionsByExitTimeDesc(positions []*store.TraderPosition) {
+	sort.Slice(positions, func(i, j int) bool {
+		if positions[i] == nil {
+			return false
+		}
+		if positions[j] == nil {
+			return true
+		}
+		return positions[i].ExitTime > positions[j].ExitTime
+	})
 }
 
 func positionsToAPIJSON(positions []*store.TraderPosition) []map[string]interface{} {

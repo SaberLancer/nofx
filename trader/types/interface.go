@@ -12,7 +12,8 @@ type ClosedPnLRecord struct {
 	Side         string    // "long" or "short"
 	EntryPrice   float64   // Entry price
 	ExitPrice    float64   // Exit/close price
-	Quantity     float64   // Position size
+	Quantity       float64 // Closed position size (OKX closeTotalPos)
+	MaxOpenQuantity float64 // Max holding size during position life (OKX openMaxPos)
 	RealizedPnL  float64   // Gross trading PnL excluding fees (OKX `pnl`; matches 平仓收益)
 	NetRealizedPnL float64 // Net PnL after fees (OKX `realizedPnl`)
 	PnlRatio     float64   // Exchange-reported ROI ratio (OKX `pnlRatio`, leverage-aware)

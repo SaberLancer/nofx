@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -254,6 +255,65 @@ func (s *OrderStore) GetTraderOrdersFiltered(traderID string, symbol string, sta
 		Find(&orders).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query orders: %w", err)
+	}
+	return orders, nil
+}
+
+// GetCloseOperationsByWindow gets close/reduce orders for one historical position window.
+func (s *OrderStore) GetCloseOperationsByWindow(
+	traderID string,
+	symbol string,
+	side string,
+	entryTimeMs int64,
+	exitTimeMs int64,
+	limit int,
+) ([]*TraderOrder, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+
+	normalizedSide := strings.ToUpper(strings.TrimSpace(side))
+	openAction := "open_long"
+	closeAction := "close_long"
+	if normalizedSide == "SHORT" {
+		openAction = "open_short"
+		closeAction = "close_short"
+	}
+
+	// Add tolerance to absorb exchange/local sync delays.
+	const preWindowMs = int64(5 * 60 * 1000)
+	const postWindowMs = int64(10 * 60 * 1000)
+
+	var startMs int64
+	if entryTimeMs > 0 {
+		startMs = entryTimeMs - preWindowMs
+		if startMs < 0 {
+			startMs = 0
+		}
+	}
+	endMs := exitTimeMs
+	if endMs <= 0 {
+		endMs = time.Now().UTC().UnixMilli()
+	}
+	endMs += postWindowMs
+
+	var orders []*TraderOrder
+	query := s.db.Where(
+		"trader_id = ? AND symbol = ? AND order_action IN ?",
+		traderID, symbol, []string{openAction, closeAction},
+	)
+	if normalizedSide != "" {
+		// Keep backward compatibility with historical rows where position_side was not populated.
+		query = query.Where("(UPPER(position_side) = ? OR position_side = '')", normalizedSide)
+	}
+	if startMs > 0 {
+		query = query.Where("created_at >= ?", startMs)
+	}
+	query = query.Where("created_at <= ?", endMs)
+
+	err := query.Order("created_at DESC").Limit(limit).Find(&orders).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query close operations: %w", err)
 	}
 	return orders, nil
 }

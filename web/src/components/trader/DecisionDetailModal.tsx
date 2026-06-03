@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Loader2 } from 'lucide-react'
 import type { DecisionRecord } from '../../types'
 import { t, type Language } from '../../i18n/translations'
@@ -46,7 +47,7 @@ export function DecisionDetailModal({
       ? actionHighlightKey(highlightSymbol, highlightAction)
       : undefined
 
-  return (
+  const modal = (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
       onClick={onClose}
@@ -142,4 +143,6 @@ export function DecisionDetailModal({
       </div>
     </div>
   )
+
+  return createPortal(modal, document.body)
 }

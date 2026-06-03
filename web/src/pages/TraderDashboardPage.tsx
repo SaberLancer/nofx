@@ -166,6 +166,14 @@ export function TraderDashboardPage({
         positionsCurrentPage * positionsPageSize
     )
 
+    const openPositionsKey = useMemo(() => {
+        if (!positions?.length) return 'empty'
+        return positions
+            .map((p) => `${p.symbol}:${p.side}:${p.quantity ?? 0}`)
+            .sort()
+            .join('|')
+    }, [positions])
+
     const chartCandidateSymbols = useMemo(() => {
         const fromPositions = (positions || []).map((p) => p.symbol?.toUpperCase()).filter(Boolean) as string[]
         const fromDecisions = (decisions || [])
@@ -877,6 +885,7 @@ export function TraderDashboardPage({
                         <PositionHistory
                             traderId={selectedTraderId}
                             openPositionCount={account?.position_count}
+                            openPositionsKey={openPositionsKey}
                         />
                     </div>
                 )}

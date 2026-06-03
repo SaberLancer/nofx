@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import useSWR from 'swr'
 import { Brain } from 'lucide-react'
 import { api } from '../../lib/api'
 import {
   closeActionForSide,
   findDecisionForOperation,
+  isLikelySystemClose,
   openActionForSide,
 } from '../../lib/decisionTradeMatch'
 import { useLanguage } from '../../contexts/LanguageContext'
@@ -13,10 +15,11 @@ import { MetricTooltip } from '../common/MetricTooltip'
 import { formatPrice, formatQuantity } from '../../utils/format'
 import { NofxSelect } from '../ui/select'
 import { DecisionDetailModal } from './DecisionDetailModal'
-import { calcCloseROIPct } from './utils'
+import { calcCloseROIPct, calcOperationCloseROIPct, getDisplayPnL } from './utils'
 import type {
   DecisionRecord,
   HistoricalPosition,
+  PositionCloseOperation,
   TraderStats,
   SymbolStats,
   DirectionStats,
@@ -26,11 +29,60 @@ interface PositionHistoryProps {
   traderId: string
   /** When open positions decrease, history refetches immediately (position closed). */
   openPositionCount?: number
+  /** Fingerprint of open positions (symbol/side/qty) — refresh history after close/reduce. */
+  openPositionsKey?: string
 }
 
 /** SWR cache key — use with globalMutate after manual close. */
 export function positionHistorySWRKey(traderId: string) {
   return `position-history-${traderId}`
+}
+
+type TimeRangePreset = 'all' | '7d' | '30d' | '90d' | 'custom'
+
+function positionExitTimeMs(position: HistoricalPosition): number {
+  const v = position.exit_time
+  if (v === undefined || v === null || v === '') return 0
+  if (typeof v === 'number') return v
+  const ms = Date.parse(String(v))
+  return Number.isNaN(ms) ? 0 : ms
+}
+
+function dateInputToStartMs(dateStr: string): number {
+  if (!dateStr) return NaN
+  return new Date(`${dateStr}T00:00:00`).getTime()
+}
+
+function dateInputToEndMs(dateStr: string): number {
+  if (!dateStr) return NaN
+  return new Date(`${dateStr}T23:59:59.999`).getTime()
+}
+
+function resolveTimeRangeMs(
+  preset: TimeRangePreset,
+  dateFrom: string,
+  dateTo: string
+): { fromMs: number; toMs: number } | null {
+  const now = Date.now()
+  switch (preset) {
+    case '7d':
+      return { fromMs: now - 7 * 24 * 60 * 60 * 1000, toMs: now }
+    case '30d':
+      return { fromMs: now - 30 * 24 * 60 * 60 * 1000, toMs: now }
+    case '90d':
+      return { fromMs: now - 90 * 24 * 60 * 60 * 1000, toMs: now }
+    case 'custom': {
+      const fromMs = dateInputToStartMs(dateFrom)
+      const toMs = dateInputToEndMs(dateTo)
+      if (!Number.isFinite(fromMs) && !Number.isFinite(toMs)) return null
+      return {
+        fromMs: Number.isFinite(fromMs) ? fromMs : 0,
+        toMs: Number.isFinite(toMs) ? toMs : now,
+      }
+    }
+    default:
+      return null
+  }
 }
 
 // Format number with proper decimals (for large numbers)
@@ -242,20 +294,128 @@ function DirectionStatsCard({ stat, language }: { stat: DirectionStats; language
 
 type PositionDecisionKind = 'open' | 'close'
 
+function mergeCloseOperations(operations: PositionCloseOperation[]): PositionCloseOperation[] {
+  if (!operations || operations.length === 0) return []
+
+  const toMs = (v: string | number | undefined): number => {
+    if (v === undefined || v === null || v === '') return Number.POSITIVE_INFINITY
+    if (typeof v === 'number') return v
+    const ms = Date.parse(v)
+    return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms
+  }
+
+  const toSec = (v: string | number | undefined): number => {
+    const ms = toMs(v)
+    if (!Number.isFinite(ms)) return Number.MAX_SAFE_INTEGER
+    return Math.floor(ms / 1000)
+  }
+
+  const groups = new Map<string, PositionCloseOperation[]>()
+  for (const op of operations) {
+    const ex = String(op.exchange_order_id || '').trim()
+    const action = String(op.order_action || '').trim()
+    const posSide = String(op.position_side || '').trim()
+    const status = String(op.status || '').trim()
+
+    // Prefer exchange order id grouping (OKX ordId) so same-second orders stay separate.
+    const key = ex !== ''
+      ? `ord:${ex}|action:${action}|posSide:${posSide}`
+      : (() => {
+          const timeSec = toSec(op.filled_at || op.created_at)
+          return `sec:${timeSec}|action:${action}|posSide:${posSide}|status:${status}|exType:none`
+        })()
+
+    const arr = groups.get(key)
+    if (arr) arr.push(op)
+    else groups.set(key, [op])
+  }
+
+  const merged: PositionCloseOperation[] = []
+  for (const [, ops] of groups) {
+    if (ops.length === 0) continue
+
+    let sumExecQty = 0
+    let sumFilledQty = 0
+    let sumQty = 0
+    let sumFee = 0
+    let sumPnl = 0
+    let weightedPriceSum = 0
+    let weightedAvgFillSum = 0
+
+    let earliestCreatedAt = ops[0].created_at
+    let latestFilledAt = ops[0].filled_at
+
+    let status = ops[0].status
+    if (ops.some((o) => String(o.status || '').toUpperCase() === 'FILLED')) {
+      status = 'FILLED'
+    }
+
+    for (const op of ops) {
+      const execQty = Number(op.exec_quantity || 0)
+      const filledQty = Number(op.filled_quantity || 0)
+      const qty = Number(op.quantity || 0)
+
+      sumExecQty += execQty
+      sumFilledQty += filledQty
+      sumQty += qty
+      sumFee += Number(op.fee || 0)
+      sumPnl += Number(op.realized_pnl || 0)
+
+      const execPrice = Number(op.exec_price || 0)
+      const avgFillPrice = Number(op.avg_fill_price || 0)
+      weightedPriceSum += execPrice * execQty
+      weightedAvgFillSum += avgFillPrice * execQty
+
+      if (toMs(op.created_at) < toMs(earliestCreatedAt)) earliestCreatedAt = op.created_at
+      if (toMs(op.filled_at) > toMs(latestFilledAt)) latestFilledAt = op.filled_at
+    }
+
+    const avgExecPrice = sumExecQty > 0 ? weightedPriceSum / sumExecQty : Number(ops[0].exec_price || 0)
+    const avgAvgFillPrice =
+      sumExecQty > 0 ? weightedAvgFillSum / sumExecQty : Number(ops[0].avg_fill_price || 0)
+
+    const first = ops[0]
+    merged.push({
+      ...first,
+      // Keep the row identity stable for React keys.
+      id: first.id,
+      status,
+      quantity: sumQty,
+      filled_quantity: sumFilledQty,
+      exec_quantity: sumExecQty,
+      price: avgExecPrice,
+      exec_price: avgExecPrice,
+      avg_fill_price: avgAvgFillPrice,
+      fee: sumFee,
+      realized_pnl: sumPnl,
+      created_at: earliestCreatedAt,
+      filled_at: latestFilledAt,
+    })
+  }
+
+  merged.sort(
+    (a, b) =>
+      toMs(b.filled_at || b.created_at) - toMs(a.filled_at || a.created_at)
+  )
+  return merged
+}
+
 // Position Row Component
 function PositionRow({
   position,
   language,
   onViewDecision,
+  onViewCloseDetails,
 }: {
   position: HistoricalPosition
   language: Language
   onViewDecision: (position: HistoricalPosition, kind: PositionDecisionKind) => void
+  onViewCloseDetails: (position: HistoricalPosition) => void
 }) {
   const side = position.side || ''
   const isLong = side.toUpperCase() === 'LONG'
-  const realizedPnl = position.realized_pnl || 0
-  const isProfitable = realizedPnl >= 0
+  const displayPnl = getDisplayPnL(position)
+  const isProfitable = displayPnl >= 0
   const sideColor = isLong ? '#0ECB81' : '#F6465D'
   const pnlColor = isProfitable ? '#0ECB81' : '#F6465D'
 
@@ -268,13 +428,14 @@ function PositionRow({
   const exitPrice = position.exit_price || 0
   const pnlPct = calcCloseROIPct(position)
 
-  // Use entry_quantity for display (original position size)
-  const displayQty = position.entry_quantity || position.quantity || 0
+  const maxQty = position.entry_quantity || position.quantity || 0
+  const closeQty = position.quantity || maxQty
 
   return (
     <tr
-      className="transition-all duration-200 hover:bg-white/5"
+      className="cursor-pointer transition-all duration-200 hover:bg-white/5"
       style={{ borderBottom: '1px solid #2B3139' }}
+      onClick={() => onViewCloseDetails(position)}
     >
       {/* Symbol */}
       <td className="py-3 px-4">
@@ -305,21 +466,26 @@ function PositionRow({
         {formatPrice(exitPrice)}
       </td>
 
-      {/* Quantity */}
-      <td className="py-3 px-4 text-right font-mono" style={{ color: '#848E9C' }}>
-        {formatQuantity(displayQty)}
-      </td>
-
-      {/* Position Value (Entry Price * Quantity) */}
+      {/* Max Holding Quantity */}
       <td className="py-3 px-4 text-right font-mono" style={{ color: '#EAECEF' }}>
-        {formatNumber(entryPrice * displayQty)}
+        {formatQuantity(maxQty)}
       </td>
 
-      {/* P&L */}
+      {/* Close Quantity */}
+      <td className="py-3 px-4 text-right font-mono" style={{ color: '#848E9C' }}>
+        {formatQuantity(closeQty)}
+      </td>
+
+      {/* Position Value (Entry Price * Max Qty) */}
+      <td className="py-3 px-4 text-right font-mono" style={{ color: '#EAECEF' }}>
+        {formatNumber(entryPrice * maxQty)}
+      </td>
+
+      {/* P&L (net, matches OKX App) */}
       <td className="py-3 px-4 text-right">
         <div className="font-mono font-semibold" style={{ color: pnlColor }}>
           {isProfitable ? '+' : ''}
-          {formatNumber(realizedPnl)}
+          {formatNumber(displayPnl)}
         </div>
         <div className="text-xs" style={{ color: pnlColor }}>
           {pnlPct >= 0 ? '+' : ''}
@@ -349,7 +515,10 @@ function PositionRow({
         <div className="inline-flex items-center gap-1">
           <button
             type="button"
-            onClick={() => onViewDecision(position, 'open')}
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewDecision(position, 'open')
+            }}
             title={t('positionHistory.viewOpenDecision', language)}
             className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-white/10"
             style={{ color: '#0ECB81', border: '1px solid rgba(14, 203, 129, 0.35)' }}
@@ -359,7 +528,10 @@ function PositionRow({
           </button>
           <button
             type="button"
-            onClick={() => onViewDecision(position, 'close')}
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewDecision(position, 'close')
+            }}
             title={t('positionHistory.viewCloseDecision', language)}
             className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-white/10"
             style={{ color: '#F6465D', border: '1px solid rgba(246, 70, 93, 0.35)' }}
@@ -367,19 +539,203 @@ function PositionRow({
             <Brain className="w-3.5 h-3.5" />
             <span>{language === 'zh' ? '平' : 'Out'}</span>
           </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewCloseDetails(position)
+            }}
+            title={t('positionHistory.viewCloseDetail', language)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-white/10"
+            style={{ color: '#F0B90B', border: '1px solid rgba(240, 185, 11, 0.35)' }}
+          >
+            <span>{language === 'zh' ? '详' : 'Ops'}</span>
+          </button>
         </div>
       </td>
     </tr>
   )
 }
 
-export function PositionHistory({ traderId, openPositionCount }: PositionHistoryProps) {
+function isCloseOrderAction(action: string | undefined): boolean {
+  const normalized = String(action || '').trim().toLowerCase()
+  return normalized === 'close_long' || normalized === 'close_short'
+}
+
+function formatCloseAction(action: string, language: Language): string {
+  const normalized = String(action || '').trim().toLowerCase()
+  if (language === 'zh') {
+    if (normalized === 'close_long') return '平多'
+    if (normalized === 'close_short') return '平空'
+    if (normalized === 'open_long') return '开多'
+    if (normalized === 'open_short') return '开空'
+  }
+  if (normalized === 'close_long') return 'Close Long'
+  if (normalized === 'close_short') return 'Close Short'
+  if (normalized === 'open_long') return 'Open Long'
+  if (normalized === 'open_short') return 'Open Short'
+  return action || '-'
+}
+
+function PositionCloseDetailModal({
+  open,
+  language,
+  position,
+  operations,
+  loading,
+  error,
+  onClose,
+}: {
+  open: boolean
+  language: Language
+  position: HistoricalPosition | null
+  operations: PositionCloseOperation[]
+  loading: boolean
+  error: string | null
+  onClose: () => void
+}) {
+  if (!open || !position) return null
+
+  const mergedOperations = mergeCloseOperations(operations)
+
+  const totalReduced = mergedOperations
+    .filter((op) => isCloseOrderAction(op.order_action))
+    .reduce((sum, op) => sum + (op.exec_quantity || 0), 0)
+  const initialQty = position.entry_quantity || position.quantity || 0
+  const reducedRatio = initialQty > 0 ? (totalReduced / initialQty) * 100 : 0
+
+  const modal = (
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-xl border overflow-hidden"
+        style={{ background: '#12161C', borderColor: '#2B3139' }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: '#2B3139' }}>
+          <div>
+            <div className="text-sm" style={{ color: '#848E9C' }}>
+              {t('positionHistory.closeDetailTitle', language)}
+            </div>
+            <div className="mt-1 font-semibold" style={{ color: '#EAECEF' }}>
+              {(position.symbol || '').replace('USDT', '')} {position.side}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded text-sm"
+            style={{ background: '#1E2329', color: '#EAECEF', border: '1px solid #2B3139' }}
+          >
+            {t('decisionModal.close', language)}
+          </button>
+        </div>
+
+        <div className="px-5 py-4 text-sm" style={{ color: '#848E9C' }}>
+          {t('positionHistory.closeDetailSummary', language, {
+            initial: formatQuantity(initialQty),
+            reduced: formatQuantity(totalReduced),
+            pct: reducedRatio.toFixed(1),
+          })}
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-auto border-t" style={{ borderColor: '#2B3139' }}>
+          {loading ? (
+            <div className="p-6 text-center" style={{ color: '#848E9C' }}>
+              {t('positionHistory.loadingCloseDetail', language)}
+            </div>
+          ) : error ? (
+            <div className="p-6 text-center" style={{ color: '#F6465D' }}>
+              {error}
+            </div>
+          ) : operations.length === 0 ? (
+            <div className="p-6 text-center" style={{ color: '#848E9C' }}>
+              {t('positionHistory.noCloseDetail', language)}
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr style={{ background: '#0B0E11' }}>
+                  <th className="py-2 px-4 text-left text-xs" style={{ color: '#848E9C' }}>
+                    {t('positionHistory.closeDetailAction', language)}
+                  </th>
+                  <th className="py-2 px-4 text-right text-xs" style={{ color: '#848E9C' }}>
+                    {t('positionHistory.closeDetailQty', language)}
+                  </th>
+                  <th className="py-2 px-4 text-right text-xs" style={{ color: '#848E9C' }}>
+                    {t('positionHistory.closeDetailPrice', language)}
+                  </th>
+                  <th className="py-2 px-4 text-right text-xs" style={{ color: '#848E9C' }}>
+                    {t('positionHistory.closeDetailFee', language)}
+                  </th>
+                  <th className="py-2 px-4 text-right text-xs" style={{ color: '#848E9C' }}>
+                    {t('positionHistory.closeDetailPnl', language)}
+                  </th>
+                  <th className="py-2 px-4 text-right text-xs" style={{ color: '#848E9C' }}>
+                    {t('positionHistory.closeDetailRoi', language)}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {mergedOperations.map((op, idx) => {
+                  const pnl = Number(op.realized_pnl ?? 0)
+                  const fee = Number(op.fee ?? 0)
+                  const isProfitable = pnl >= 0
+                  const pnlColor = isProfitable ? '#F6465D' : '#0ECB81'
+                  const roiPct = calcOperationCloseROIPct(position, op)
+                  const roiProfitable = roiPct != null && roiPct >= 0
+                  const roiColor = roiProfitable ? '#F6465D' : '#0ECB81'
+                  return (
+                  <tr
+                    key={`${op.exchange_order_id || 'noex'}-${op.order_action || ''}-${op.position_side || ''}-${idx}`}
+                    style={{ borderTop: '1px solid #2B3139' }}
+                  >
+                    <td className="py-2 px-4 text-xs" style={{ color: '#F0B90B' }}>
+                      {formatCloseAction(op.order_action, language)}
+                    </td>
+                    <td className="py-2 px-4 text-right font-mono" style={{ color: '#EAECEF' }}>
+                      {formatQuantity(op.exec_quantity || 0)}
+                    </td>
+                    <td className="py-2 px-4 text-right font-mono" style={{ color: '#EAECEF' }}>
+                      {formatPrice(op.exec_price || op.avg_fill_price || 0)}
+                    </td>
+                    <td className="py-2 px-4 text-right font-mono text-xs" style={{ color: '#848E9C' }}>
+                      {fee !== 0 ? `-${Math.abs(fee).toFixed(fee < 0.01 && fee > 0 ? 4 : 2)}` : '-'}
+                    </td>
+                    <td className="py-2 px-4 text-right font-mono" style={{ color: pnl !== 0 ? pnlColor : '#848E9C' }}>
+                      {pnl !== 0 ? `${isProfitable ? '+' : ''}${formatNumber(pnl)}` : '-'}
+                    </td>
+                    <td className="py-2 px-4 text-right font-mono text-xs" style={{ color: roiPct != null ? roiColor : '#848E9C' }}>
+                      {roiPct != null
+                        ? `${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(2)}%`
+                        : '-'}
+                    </td>
+                  </tr>
+                )})}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  return createPortal(modal, document.body)
+}
+
+export function PositionHistory({ traderId, openPositionCount, openPositionsKey }: PositionHistoryProps) {
   const { language } = useLanguage()
   const [positions, setPositions] = useState<HistoricalPosition[]>([])
   const [stats, setStats] = useState<TraderStats | null>(null)
   const [symbolStats, setSymbolStats] = useState<SymbolStats[]>([])
   const [directionStats, setDirectionStats] = useState<DirectionStats[]>([])
   const prevOpenCountRef = useRef<number | undefined>(undefined)
+  const prevPositionsKeyRef = useRef<string | undefined>(undefined)
 
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(20)
@@ -388,6 +744,9 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
   // Filter state
   const [filterSymbol, setFilterSymbol] = useState<string>('all')
   const [filterSide, setFilterSide] = useState<string>('all')
+  const [filterTimePreset, setFilterTimePreset] = useState<TimeRangePreset>('all')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [sortBy, setSortBy] = useState<'time' | 'pnl' | 'pnl_pct'>('time')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
@@ -416,7 +775,7 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
     setDirectionStats(historyData.direction_stats || [])
   }, [historyData])
 
-  // Immediate refresh when a position is closed (open count drops on dashboard poll)
+  // Refresh when a position is fully closed (open count drops).
   useEffect(() => {
     if (
       traderId &&
@@ -428,6 +787,22 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
     }
     prevOpenCountRef.current = openPositionCount
   }, [openPositionCount, traderId, refreshHistory])
+
+  // Refresh after close/reduce changes open position size (partial reduce included).
+  useEffect(() => {
+    if (!traderId || openPositionsKey === undefined) return
+    if (
+      prevPositionsKeyRef.current !== undefined &&
+      prevPositionsKeyRef.current !== openPositionsKey
+    ) {
+      const timer = window.setTimeout(() => {
+        refreshHistory()
+      }, 1200)
+      prevPositionsKeyRef.current = openPositionsKey
+      return () => window.clearTimeout(timer)
+    }
+    prevPositionsKeyRef.current = openPositionsKey
+  }, [openPositionsKey, traderId, refreshHistory])
 
   const loading = isLoading && !historyData
   const error = swrError
@@ -452,6 +827,11 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
     action: string
     kind: PositionDecisionKind
   } | null>(null)
+  const [opsModalOpen, setOpsModalOpen] = useState(false)
+  const [opsModalLoading, setOpsModalLoading] = useState(false)
+  const [opsModalError, setOpsModalError] = useState<string | null>(null)
+  const [opsModalPosition, setOpsModalPosition] = useState<HistoricalPosition | null>(null)
+  const [opsModalData, setOpsModalData] = useState<PositionCloseOperation[]>([])
 
   const loadDecisions = useCallback(async () => {
     if (decisionsCache) return decisionsCache
@@ -491,6 +871,13 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
         )
         if (match) {
           setModalDecision(match)
+        } else if (kind === 'close' && isLikelySystemClose(
+          list,
+          position.symbol,
+          position.side,
+          eventTime
+        )) {
+          setModalError('system')
         } else {
           setModalError('not_found')
         }
@@ -509,6 +896,32 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
     setModalDecision(null)
     setModalError(null)
   }, [])
+
+  const handleViewCloseDetails = useCallback(
+    async (position: HistoricalPosition) => {
+      setOpsModalPosition(position)
+      setOpsModalOpen(true)
+      setOpsModalLoading(true)
+      setOpsModalError(null)
+      setOpsModalData([])
+      try {
+        const res = await api.getPositionCloseOperations(traderId, {
+          symbol: position.symbol,
+          side: position.side,
+          entryTime: position.entry_time,
+          exitTime: position.exit_time,
+          limit: 100,
+        })
+        setOpsModalData(res.operations || [])
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : t('positionHistory.closeDetailFetchFailed', language)
+        setOpsModalError(msg)
+      } finally {
+        setOpsModalLoading(false)
+      }
+    },
+    [traderId, language]
+  )
 
   // Get unique symbols for filter
   const uniqueSymbols = useMemo(() => {
@@ -530,6 +943,15 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
       )
     }
 
+    const timeRange = resolveTimeRangeMs(filterTimePreset, filterDateFrom, filterDateTo)
+    if (timeRange) {
+      result = result.filter((p) => {
+        const exitMs = positionExitTimeMs(p)
+        if (exitMs <= 0) return false
+        return exitMs >= timeRange.fromMs && exitMs <= timeRange.toMs
+      })
+    }
+
     // Apply sorting
     result.sort((a, b) => {
       let comparison = 0
@@ -539,22 +961,17 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
             new Date(a.exit_time || 0).getTime() - new Date(b.exit_time || 0).getTime()
           break
         case 'pnl':
-          comparison = (a.realized_pnl || 0) - (b.realized_pnl || 0)
+          comparison = getDisplayPnL(a) - getDisplayPnL(b)
           break
-        case 'pnl_pct': {
-          const aPrice = a.entry_price || 1
-          const bPrice = b.entry_price || 1
-          const aPct = ((a.exit_price || 0) - aPrice) / aPrice * 100
-          const bPct = ((b.exit_price || 0) - bPrice) / bPrice * 100
-          comparison = aPct - bPct
+        case 'pnl_pct':
+          comparison = calcCloseROIPct(a) - calcCloseROIPct(b)
           break
-        }
       }
       return sortOrder === 'desc' ? -comparison : comparison
     })
 
     return result
-  }, [positions, filterSymbol, filterSide, sortBy, sortOrder])
+  }, [positions, filterSymbol, filterSide, filterTimePreset, filterDateFrom, filterDateTo, sortBy, sortOrder])
 
   // Pagination calculations
   const totalFilteredCount = filteredAndSortedPositions.length
@@ -563,7 +980,7 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [filterSymbol, filterSide, sortBy, sortOrder, pageSize])
+  }, [filterSymbol, filterSide, filterTimePreset, filterDateFrom, filterDateTo, sortBy, sortOrder, pageSize])
 
   // Paginated positions (for display)
   const paginatedPositions = useMemo(() => {
@@ -836,6 +1253,70 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
             </div>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm" style={{ color: '#848E9C' }}>
+              {t('positionHistory.timeRange', language)}:
+            </span>
+            <div className="flex flex-wrap rounded overflow-hidden" style={{ border: '1px solid #2B3139' }}>
+              {(
+                [
+                  ['all', 'timeAll'],
+                  ['7d', 'time7d'],
+                  ['30d', 'time30d'],
+                  ['90d', 'time90d'],
+                  ['custom', 'timeCustom'],
+                ] as const
+              ).map(([preset, labelKey]) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setFilterTimePreset(preset)}
+                  className="px-3 py-1.5 text-sm transition-colors"
+                  style={{
+                    background: filterTimePreset === preset ? '#2B3139' : 'transparent',
+                    color: filterTimePreset === preset ? '#EAECEF' : '#848E9C',
+                  }}
+                >
+                  {t(`positionHistory.${labelKey}`, language)}
+                </button>
+              ))}
+            </div>
+            {filterTimePreset === 'custom' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs" style={{ color: '#848E9C' }}>
+                  {t('positionHistory.timeFrom', language)}
+                </span>
+                <input
+                  type="date"
+                  value={filterDateFrom}
+                  onChange={(e) => setFilterDateFrom(e.target.value)}
+                  className="rounded px-2 py-1 text-sm"
+                  style={{
+                    background: '#0B0E11',
+                    border: '1px solid #2B3139',
+                    color: '#EAECEF',
+                    colorScheme: 'dark',
+                  }}
+                />
+                <span className="text-xs" style={{ color: '#848E9C' }}>
+                  {t('positionHistory.timeTo', language)}
+                </span>
+                <input
+                  type="date"
+                  value={filterDateTo}
+                  onChange={(e) => setFilterDateTo(e.target.value)}
+                  className="rounded px-2 py-1 text-sm"
+                  style={{
+                    background: '#0B0E11',
+                    border: '1px solid #2B3139',
+                    color: '#EAECEF',
+                    colorScheme: 'dark',
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-sm" style={{ color: '#848E9C' }}>
               {t('positionHistory.sort', language)}:
@@ -890,6 +1371,12 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
                   className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider"
                   style={{ color: '#848E9C' }}
                 >
+                  {t('positionHistory.maxQty', language)}
+                </th>
+                <th
+                  className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider"
+                  style={{ color: '#848E9C' }}
+                >
                   {t('positionHistory.qty', language)}
                 </th>
                 <th
@@ -931,14 +1418,29 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
               </tr>
             </thead>
             <tbody>
-              {filteredPositions.map((position) => (
-                <PositionRow
-                  key={position.id}
-                  position={position}
-                  language={language}
-                  onViewDecision={handleViewDecision}
-                />
-              ))}
+              {filteredPositions.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={11}
+                    className="py-10 text-center text-sm"
+                    style={{ color: '#848E9C' }}
+                  >
+                    {positions.length > 0
+                      ? t('positionHistory.noFilterResults', language)
+                      : t('positionHistory.noHistory', language)}
+                  </td>
+                </tr>
+              ) : (
+                filteredPositions.map((position) => (
+                  <PositionRow
+                    key={position.id}
+                    position={position}
+                    language={language}
+                    onViewDecision={handleViewDecision}
+                    onViewCloseDetails={handleViewCloseDetails}
+                  />
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -959,16 +1461,16 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
                 <span
                   style={{
                     color:
-                      filteredAndSortedPositions.reduce((sum, p) => sum + (p.realized_pnl || 0), 0) >= 0
+                      filteredAndSortedPositions.reduce((sum, p) => sum + getDisplayPnL(p), 0) >= 0
                         ? '#0ECB81'
                         : '#F6465D',
                   }}
                 >
-                  {filteredAndSortedPositions.reduce((sum, p) => sum + (p.realized_pnl || 0), 0) >= 0
+                  {filteredAndSortedPositions.reduce((sum, p) => sum + getDisplayPnL(p), 0) >= 0
                     ? '+'
                     : ''}
                   {formatNumber(
-                    filteredAndSortedPositions.reduce((sum, p) => sum + (p.realized_pnl || 0), 0)
+                    filteredAndSortedPositions.reduce((sum, p) => sum + getDisplayPnL(p), 0)
                   )}
                 </span>
               </span>
@@ -1076,6 +1578,15 @@ export function PositionHistory({ traderId, openPositionCount }: PositionHistory
         decision={modalDecision}
         highlightSymbol={modalMeta?.symbol}
         highlightAction={modalMeta?.action}
+      />
+      <PositionCloseDetailModal
+        open={opsModalOpen}
+        language={language}
+        position={opsModalPosition}
+        operations={opsModalData}
+        loading={opsModalLoading}
+        error={opsModalError}
+        onClose={() => setOpsModalOpen(false)}
       />
     </div>
   )

@@ -178,8 +178,9 @@ type ClosedPnLRecord struct {
 	Side           string
 	EntryPrice     float64
 	ExitPrice      float64
-	Quantity       float64
-	RealizedPnL    float64
+	Quantity        float64
+	MaxOpenQuantity float64
+	RealizedPnL     float64
 	NetRealizedPnL float64
 	PnlRatio       float64
 	Fee            float64

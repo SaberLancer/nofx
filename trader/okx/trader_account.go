@@ -255,11 +255,17 @@ func (t *OKXTrader) okxPositionHistoryRowToRecord(pos okxPositionHistoryRow) (ty
 	record.EntryPrice, _ = strconv.ParseFloat(pos.OpenAvgPx, 64)
 	record.ExitPrice, _ = strconv.ParseFloat(pos.CloseAvgPx, 64)
 
-	qty, _ := strconv.ParseFloat(pos.CloseTotalPos, 64)
+	closeQty, _ := strconv.ParseFloat(pos.CloseTotalPos, 64)
+	maxQty, _ := strconv.ParseFloat(pos.OpenMaxPos, 64)
 	if inst, err := t.getInstrument(record.Symbol); err == nil && inst.CtVal > 0 {
-		qty = qty * inst.CtVal
+		closeQty = closeQty * inst.CtVal
+		maxQty = maxQty * inst.CtVal
 	}
-	record.Quantity = qty
+	record.Quantity = closeQty
+	record.MaxOpenQuantity = maxQty
+	if record.MaxOpenQuantity <= 0 {
+		record.MaxOpenQuantity = record.Quantity
+	}
 
 	if record.Symbol == "" || record.Quantity <= 0 || record.EntryPrice <= 0 || record.ExitPrice <= 0 {
 		return record, false
@@ -280,11 +286,15 @@ func (t *OKXTrader) okxPositionHistoryRowToRecord(pos okxPositionHistoryRow) (ty
 	lev, _ := strconv.ParseFloat(pos.Lever, 64)
 	record.Leverage = int(lev)
 
-	// OKX pnlRatio is net ROI (after fees). Order UI「平仓收益率」uses gross PnL / margin.
-	if record.RealizedPnL != 0 && record.EntryPrice > 0 && record.Quantity > 0 && record.Leverage > 0 {
-		margin := record.EntryPrice * record.Quantity / float64(record.Leverage)
+	// OKX App「平仓收益率」= net realized PnL / margin (matches 已实现收益 + 已实现收益率).
+	displayPnL := record.NetRealizedPnL
+	if displayPnL == 0 {
+		displayPnL = record.RealizedPnL
+	}
+	if displayPnL != 0 && record.EntryPrice > 0 && record.MaxOpenQuantity > 0 && record.Leverage > 0 {
+		margin := record.EntryPrice * record.MaxOpenQuantity / float64(record.Leverage)
 		if margin > 0 {
-			record.PnlRatio = record.RealizedPnL / margin
+			record.PnlRatio = displayPnL / margin
 		}
 	} else {
 		record.PnlRatio, _ = strconv.ParseFloat(pos.PnlRatio, 64)
@@ -298,6 +308,10 @@ func (t *OKXTrader) okxPositionHistoryRowToRecord(pos okxPositionHistoryRow) (ty
 	switch pos.Type {
 	case "3", "4":
 		record.CloseType = "liquidation"
+	case "2":
+		record.CloseType = "full"
+	case "1":
+		record.CloseType = "partial"
 	default:
 		record.CloseType = "unknown"
 	}
@@ -312,6 +326,7 @@ type okxPositionHistoryRow struct {
 	PosSide       string `json:"posSide"`
 	OpenAvgPx     string `json:"openAvgPx"`
 	CloseAvgPx    string `json:"closeAvgPx"`
+	OpenMaxPos    string `json:"openMaxPos"`
 	CloseTotalPos string `json:"closeTotalPos"`
 	Pnl           string `json:"pnl"`
 	RealizedPnl   string `json:"realizedPnl"`

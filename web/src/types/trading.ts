@@ -229,6 +229,25 @@ export interface PositionHistoryResponse {
   direction_stats: DirectionStats[]
 }
 
+export interface PositionCloseOperation {
+  id: number
+  exchange_order_id: string
+  order_action: string
+  position_side: string
+  side?: string
+  status: string
+  quantity?: number
+  filled_quantity?: number
+  exec_quantity: number
+  price?: number
+  avg_fill_price: number
+  exec_price: number
+  fee?: number
+  realized_pnl?: number
+  created_at?: string
+  filled_at: string
+}
+
 // Grid Risk Information for frontend display
 export interface GridRiskInfo {
   // Leverage info

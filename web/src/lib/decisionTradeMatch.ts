@@ -53,20 +53,50 @@ export function findDecisionForOperation(
   let bestDelta = Infinity
 
   for (const record of decisions) {
-    const hasAction = record.decisions?.some(
+    const matching = record.decisions?.filter(
       (d) => d.symbol === symbol && d.action === action
     )
-    if (!hasAction) continue
+    if (!matching?.length) continue
 
-    const ts = new Date(record.timestamp).getTime()
-    if (Number.isNaN(ts)) continue
+    // Prefer per-action timestamps; fall back to cycle timestamp.
+    const candidateTimes: number[] = []
+    for (const d of matching) {
+      const actionTs = d.timestamp ? new Date(d.timestamp).getTime() : NaN
+      if (Number.isFinite(actionTs)) candidateTimes.push(actionTs)
+    }
+    if (candidateTimes.length === 0) {
+      const cycleTs = new Date(record.timestamp).getTime()
+      if (Number.isFinite(cycleTs)) candidateTimes.push(cycleTs)
+    }
 
-    const delta = Math.abs(ts - eventTimeMs)
-    if (delta < bestDelta && delta <= maxSkewMs) {
-      bestDelta = delta
-      best = record
+    for (const ts of candidateTimes) {
+      const delta = Math.abs(ts - eventTimeMs)
+      if (delta < bestDelta && delta <= maxSkewMs) {
+        bestDelta = delta
+        best = record
+      }
     }
   }
 
   return best
+}
+
+/** True when a closed position has no AI close decision in the decision log window. */
+export function isLikelySystemClose(
+  decisions: DecisionRecord[],
+  symbol: string,
+  side: string,
+  exitTimeMs: number,
+  maxSkewMs = 60 * 60 * 1000
+): boolean {
+  if (!exitTimeMs) return false
+  const action = closeActionForSide(side)
+  const match = findDecisionForOperation(
+    decisions,
+    symbol,
+    action,
+    exitTimeMs,
+    maxSkewMs
+  )
+  return match === null
 }

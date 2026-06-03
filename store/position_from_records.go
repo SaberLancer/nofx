@@ -29,6 +29,11 @@ func ClosedPnLRecordsToTraderPositions(traderID, exchangeID, exchangeType string
 			exchangePositionID = rec.OrderID
 		}
 
+		entryQty := rec.MaxOpenQuantity
+		if entryQty <= 0 {
+			entryQty = rec.Quantity
+		}
+
 		out = append(out, &TraderPosition{
 			ID:                 int64(i + 1),
 			TraderID:           traderID,
@@ -38,7 +43,7 @@ func ClosedPnLRecordsToTraderPositions(traderID, exchangeID, exchangeType string
 			Symbol:             rec.Symbol,
 			Side:               side,
 			Quantity:           rec.Quantity,
-			EntryQuantity:      rec.Quantity,
+			EntryQuantity:      entryQty,
 			EntryPrice:         rec.EntryPrice,
 			EntryTime:          rec.EntryTime,
 			ExitPrice:          rec.ExitPrice,
@@ -97,6 +102,13 @@ func ComputeDirectionStatsFromPositions(positions []*TraderPosition) []Direction
 	return computeDirectionStatsFromRows(rows)
 }
 
+func positionDisplayPnL(pos TraderPosition) float64 {
+	if pos.NetRealizedPnL != 0 {
+		return pos.NetRealizedPnL
+	}
+	return pos.RealizedPnL
+}
+
 func computeFullStatsFromRows(positions []TraderPosition) (*TraderStats, error) {
 	stats := &TraderStats{}
 	if len(positions) == 0 {
@@ -107,17 +119,18 @@ func computeFullStatsFromRows(positions []TraderPosition) (*TraderStats, error) 
 	var totalWin, totalLoss float64
 
 	for _, pos := range positions {
+		pnl := positionDisplayPnL(pos)
 		stats.TotalTrades++
-		stats.TotalPnL += pos.RealizedPnL
+		stats.TotalPnL += pnl
 		stats.TotalFee += pos.Fee
-		pnls = append(pnls, pos.RealizedPnL)
+		pnls = append(pnls, pnl)
 
-		if pos.RealizedPnL > 0 {
+		if pnl > 0 {
 			stats.WinTrades++
-			totalWin += pos.RealizedPnL
-		} else if pos.RealizedPnL < 0 {
+			totalWin += pnl
+		} else if pnl < 0 {
 			stats.LossTrades++
-			totalLoss += -pos.RealizedPnL
+			totalLoss += -pnl
 		}
 	}
 
@@ -152,9 +165,10 @@ func computeSymbolStatsFromRows(positions []TraderPosition, limit int) []SymbolS
 			symbolHoldMins[pos.Symbol] = []float64{}
 		}
 		s := symbolMap[pos.Symbol]
+		pnl := positionDisplayPnL(pos)
 		s.TotalTrades++
-		s.TotalPnL += pos.RealizedPnL
-		if pos.RealizedPnL > 0 {
+		s.TotalPnL += pnl
+		if pnl > 0 {
 			s.WinTrades++
 		}
 		if pos.ExitTime > 0 {
@@ -199,9 +213,10 @@ func computeDirectionStatsFromRows(positions []TraderPosition) []DirectionStats 
 			sideStats[pos.Side] = &DirectionStats{Side: pos.Side}
 		}
 		s := sideStats[pos.Side]
+		pnl := positionDisplayPnL(pos)
 		s.TradeCount++
-		s.TotalPnL += pos.RealizedPnL
-		if pos.RealizedPnL > 0 {
+		s.TotalPnL += pnl
+		if pnl > 0 {
 			s.WinRate++
 		}
 	}
