@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"nofx/logger"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,7 @@ func (t *OKXTrader) GetPositions() ([]map[string]interface{}, error) {
 		InstId  string `json:"instId"`
 		PosSide string `json:"posSide"`
 		Pos     string `json:"pos"`
+		PosId   string `json:"posId"`
 		AvgPx   string `json:"avgPx"`
 		MarkPx  string `json:"markPx"`
 		Upl     string `json:"upl"`
@@ -84,17 +86,18 @@ func (t *OKXTrader) GetPositions() ([]map[string]interface{}, error) {
 		}
 
 		posMap := map[string]interface{}{
-			"symbol":           symbol,
-			"positionAmt":      posAmt,
-			"entryPrice":       entryPrice,
-			"markPrice":        markPrice,
-			"unRealizedProfit": upl,
-			"leverage":         leverage,
-			"liquidationPrice": liqPrice,
-			"side":             side,
-			"mgnMode":          mgnMode, // Margin mode: "cross" or "isolated"
-			"createdTime":      cTime,   // Position open time (ms)
-			"updatedTime":      uTime,   // Position last update time (ms)
+			"symbol":             symbol,
+			"positionAmt":        posAmt,
+			"entryPrice":         entryPrice,
+			"markPrice":          markPrice,
+			"unRealizedProfit":   upl,
+			"leverage":           leverage,
+			"liquidationPrice":   liqPrice,
+			"side":               side,
+			"mgnMode":            mgnMode, // Margin mode: "cross" or "isolated"
+			"createdTime":        cTime,   // Position open time (ms)
+			"updatedTime":        uTime,   // Position last update time (ms)
+			"exchangePositionId": strings.TrimSpace(pos.PosId),
 		}
 		result = append(result, posMap)
 	}

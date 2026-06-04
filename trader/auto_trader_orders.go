@@ -136,6 +136,7 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 	at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
 
 	at.applyOpenPositionProtection(decision, decision.Symbol, "LONG", quantity, actionRecord)
+	at.ResetPeakPnL(decision.Symbol, "long")
 
 	return nil
 }
@@ -247,18 +248,50 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 	at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
 
 	at.applyOpenPositionProtection(decision, decision.Symbol, "SHORT", quantity, actionRecord)
+	at.ResetPeakPnL(decision.Symbol, "short")
 
 	return nil
+}
+
+func isCodeEnforcedClose(decision *kernel.Decision) bool {
+	return decision != nil && strings.Contains(decision.Reasoning, "[CODE ENFORCED PnL]")
 }
 
 func codeEnforcedClosePrice(decision *kernel.Decision) (float64, bool) {
 	if decision == nil || decision.Price <= 0 {
 		return 0, false
 	}
-	if strings.Contains(decision.Reasoning, "[CODE ENFORCED PnL]") {
+	if isCodeEnforcedClose(decision) {
 		return decision.Price, true
 	}
 	return 0, false
+}
+
+// interpretCloseOrderResult treats exchange NO_POSITION as failure for code-enforced closes
+// (UI would show success while OKX still holds the position or state diverged).
+func interpretCloseOrderResult(order map[string]interface{}, err error, codeEnforced bool) error {
+	if err != nil {
+		return err
+	}
+	if order == nil {
+		if codeEnforced {
+			return fmt.Errorf("close returned empty result")
+		}
+		return nil
+	}
+	status, _ := order["status"].(string)
+	if status != "NO_POSITION" {
+		return nil
+	}
+	msg, _ := order["message"].(string)
+	if msg == "" {
+		msg = "exchange reports no matching position (NO_POSITION)"
+	}
+	if codeEnforced {
+		return fmt.Errorf("forced close mismatch: %s", msg)
+	}
+	logger.Infof("  ℹ️ Close skipped: %s", msg)
+	return nil
 }
 
 // executeCloseLongWithRecord executes close long position and records detailed information
@@ -321,8 +354,8 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 		closeQty = quantity * decision.CloseRatio
 	}
 	order, err := at.trader.CloseLong(decision.Symbol, closeQty) // 0 = close all
-	if err != nil {
-		return err
+	if closeErr := interpretCloseOrderResult(order, err, isCodeEnforcedClose(decision)); closeErr != nil {
+		return closeErr
 	}
 
 	// Record order ID
@@ -336,8 +369,8 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 
 	if closedQty >= quantity*0.999 || quantity <= 0 {
 		at.clearUnprotected(decision.Symbol, "long")
-		at.clearPnLEnforceTier(decision.Symbol, "long")
-		at.ClearPeakPnLCache(decision.Symbol, "long")
+		at.clearPnLEnforceTier("", decision.Symbol, "long")
+		at.ClearPeakPnLCache("", decision.Symbol, "long")
 	}
 	logger.Infof("  ✓ Position closed successfully")
 	return nil
@@ -408,8 +441,8 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 		closeQty = quantity * decision.CloseRatio
 	}
 	order, err := at.trader.CloseShort(decision.Symbol, closeQty) // 0 = close all
-	if err != nil {
-		return err
+	if closeErr := interpretCloseOrderResult(order, err, isCodeEnforcedClose(decision)); closeErr != nil {
+		return closeErr
 	}
 
 	// Record order ID
@@ -423,8 +456,8 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 
 	if closedQty >= quantity*0.999 || quantity <= 0 {
 		at.clearUnprotected(decision.Symbol, "short")
-		at.clearPnLEnforceTier(decision.Symbol, "short")
-		at.ClearPeakPnLCache(decision.Symbol, "short")
+		at.clearPnLEnforceTier("", decision.Symbol, "short")
+		at.ClearPeakPnLCache("", decision.Symbol, "short")
 	}
 	logger.Infof("  ✓ Position closed successfully")
 	return nil

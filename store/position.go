@@ -364,10 +364,11 @@ func normalizePositionSide(side string) string {
 	}
 }
 
-// SyncOpenPositionPeakPnLPct updates peak margin PnL% on the open position row when current exceeds stored peak.
+// SyncOpenPositionPeakPnLPct updates peak margin PnL% on the matched OPEN row when current exceeds stored peak.
+// When exchangePositionID is present, only that row is updated (never a stale symbol+side ghost row).
 // Returns the authoritative peak (max of stored and current). No anomaly filtering.
-func (s *PositionStore) SyncOpenPositionPeakPnLPct(traderID, symbol, side string, currentPnLPct float64) (float64, error) {
-	pos, err := s.GetOpenPositionBySymbol(traderID, symbol, side)
+func (s *PositionStore) SyncOpenPositionPeakPnLPct(traderID, exchangeID, exchangePositionID, symbol, side string, currentPnLPct float64) (float64, error) {
+	pos, err := s.resolveOpenPositionForPeak(traderID, exchangeID, exchangePositionID, symbol, side)
 	if err != nil {
 		return 0, err
 	}
@@ -376,18 +377,48 @@ func (s *PositionStore) SyncOpenPositionPeakPnLPct(traderID, symbol, side string
 	}
 
 	peak := pos.PeakPnLPct
-	if currentPnLPct <= peak {
-		return peak, nil
+	if currentPnLPct > peak {
+		now := time.Now().UTC().UnixMilli()
+		if err := s.db.Model(&TraderPosition{}).Where("id = ?", pos.ID).Updates(map[string]interface{}{
+			"peak_pnl_pct": currentPnLPct,
+			"updated_at":   now,
+		}).Error; err != nil {
+			return peak, fmt.Errorf("failed to update peak_pnl_pct: %w", err)
+		}
+		return currentPnLPct, nil
+	}
+	return peak, nil
+}
+
+func (s *PositionStore) resolveOpenPositionForPeak(traderID, exchangeID, exchangePositionID, symbol, side string) (*TraderPosition, error) {
+	exchangePositionID = strings.TrimSpace(exchangePositionID)
+	if exchangePositionID != "" && exchangeID != "" && !isSyntheticExchangePositionID(exchangePositionID) {
+		pos, err := s.GetOpenPositionByExchangePositionID(exchangeID, exchangePositionID)
+		if err != nil {
+			return nil, err
+		}
+		if pos != nil {
+			return pos, nil
+		}
+		if err := s.BindOpenPositionExchangePositionID(traderID, exchangeID, symbol, side, exchangePositionID); err != nil {
+			return nil, err
+		}
+		return s.GetOpenPositionByExchangePositionID(exchangeID, exchangePositionID)
 	}
 
-	now := time.Now().UTC().UnixMilli()
-	if err := s.db.Model(&TraderPosition{}).Where("id = ?", pos.ID).Updates(map[string]interface{}{
-		"peak_pnl_pct": currentPnLPct,
-		"updated_at":   now,
-	}).Error; err != nil {
-		return peak, fmt.Errorf("failed to update peak_pnl_pct: %w", err)
+	// Without an official exchange position id, avoid writing peak to DB rows selected only
+	// by symbol+side (prevents stale ghost OPEN rows from inheriting peak updates).
+	pos, err := s.GetOpenPositionBySymbol(traderID, symbol, side)
+	if err != nil {
+		return nil, err
 	}
-	return currentPnLPct, nil
+	if pos == nil {
+		return nil, nil
+	}
+	if !isSyntheticExchangePositionID(pos.ExchangePositionID) {
+		return pos, nil
+	}
+	return nil, nil
 }
 
 // GetOpenPositionBySymbol gets open position for specified symbol and direction
@@ -436,8 +467,8 @@ func (s *PositionStore) CountClosedPositions(traderID string) (int, error) {
 	return int(count), nil
 }
 
-// GetClosedPositions gets closed positions
-func (s *PositionStore) GetClosedPositions(traderID string, limit int) ([]*TraderPosition, error) {
+// ListClosedPositions returns CLOSED rows from DB without UI deduplication.
+func (s *PositionStore) ListClosedPositions(traderID string, limit int) ([]*TraderPosition, error) {
 	var positions []*TraderPosition
 	err := s.db.Where("trader_id = ? AND status = ?", traderID, "CLOSED").
 		Order("exit_time DESC").
@@ -451,6 +482,15 @@ func (s *PositionStore) GetClosedPositions(traderID string, limit int) ([]*Trade
 		if pos.EntryQuantity == 0 {
 			pos.EntryQuantity = pos.Quantity
 		}
+	}
+	return positions, nil
+}
+
+// GetClosedPositions gets closed positions for UI/history (deduped display rows).
+func (s *PositionStore) GetClosedPositions(traderID string, limit int) ([]*TraderPosition, error) {
+	positions, err := s.ListClosedPositions(traderID, limit)
+	if err != nil {
+		return nil, err
 	}
 	return DedupeClosedPositions(positions), nil
 }

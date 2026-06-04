@@ -260,27 +260,28 @@ func TestPositionAccumulationBug(t *testing.T) {
 		}
 	}
 
-	// Should have 10 closed positions with positive PnL
-	allPositions, err := positionStore.GetClosedPositions(traderID, 100)
+	// Should have 10 closed rows in DB (use raw count — GetClosedPositions dedupes for UI display).
+	closedCount, err := positionStore.CountClosedPositions(traderID)
 	if err != nil {
-		t.Fatalf("Failed to get closed positions: %v", err)
+		t.Fatalf("Failed to count closed positions: %v", err)
 	}
-
-	closedCount := 0
-	totalPnL := 0.0
-	for _, p := range allPositions {
-		if p.Status == "CLOSED" {
-			closedCount++
-			totalPnL += p.RealizedPnL
-		}
-	}
-
 	if closedCount != 10 {
 		t.Errorf("Expected 10 closed positions, got %d", closedCount)
 	}
 
-	if totalPnL <= 0 {
-		t.Errorf("Expected positive total PnL, got %.2f", totalPnL)
+	allPositions, err := positionStore.ListClosedPositions(traderID, 100)
+	if err != nil {
+		t.Fatalf("Failed to list closed positions: %v", err)
+	}
+
+	totalPnL := 0.0
+	for _, p := range allPositions {
+		totalPnL += p.RealizedPnL
+	}
+
+	expectedTotalPnL := 10.0 * 10 // each cycle passes realizedPnL=10
+	if totalPnL != expectedTotalPnL {
+		t.Errorf("Expected total PnL %.2f, got %.2f", expectedTotalPnL, totalPnL)
 	}
 }
 

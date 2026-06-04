@@ -34,7 +34,8 @@ type PositionInfo struct {
 	PeakPnLPct       float64 `json:"peak_pnl_pct"` // Historical peak profit percentage
 	LiquidationPrice float64 `json:"liquidation_price"`
 	MarginUsed       float64 `json:"margin_used"`
-	UpdateTime       int64   `json:"update_time"` // Position update timestamp (milliseconds)
+	UpdateTime         int64   `json:"update_time"` // Position update timestamp (milliseconds)
+	ExchangePositionID string  `json:"exchange_position_id,omitempty"`
 	// AutoPnLEnforceTier: 0=none, 1=lock tier1 already applied by backend, 2=tier2, etc.
 	AutoPnLEnforceTier int `json:"auto_pnl_enforce_tier,omitempty"`
 }

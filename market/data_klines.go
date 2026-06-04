@@ -37,8 +37,22 @@ func getKlinesFromCoinAnk(symbol, interval, exchange string, limit int, opts Kli
 			return klines, nil
 		}
 		if opts.Simulated {
+			// Demo feed may omit some bars; fall back to live OKX candles so AI cycles are not blocked.
+			if err != nil {
+				logger.Warnf("⚠️ OKX simulated klines failed for %s %s: %v — trying live OKX", symbol, interval, err)
+			} else {
+				logger.Warnf("⚠️ OKX simulated klines empty for %s %s — trying live OKX", symbol, interval)
+			}
+			live, liveErr := GetKlinesRecentOKX(symbol, interval, limit, false)
+			if liveErr == nil && len(live) > 0 {
+				logger.Infof("✓ OKX live klines fallback for demo mode %s %s (%d bars)", symbol, interval, len(live))
+				return live, nil
+			}
 			if err != nil {
 				return nil, fmt.Errorf("OKX simulated klines failed for %s %s: %w", symbol, interval, err)
+			}
+			if liveErr != nil {
+				return nil, fmt.Errorf("OKX simulated klines empty for %s %s (live fallback: %v)", symbol, interval, liveErr)
 			}
 			return nil, fmt.Errorf("OKX simulated klines empty for %s %s", symbol, interval)
 		}

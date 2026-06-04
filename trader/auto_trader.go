@@ -430,6 +430,7 @@ func (at *AutoTrader) Run() error {
 	at.startTime = time.Now()
 
 	logger.Info("🚀 AI-driven automatic trading system started")
+	at.reconcileOpenPositionsWithExchange(nil)
 	at.loadPeakPnLFromStore()
 	at.logInfof("💰 Initial balance: %.2f USDT", at.initialBalance)
 	at.logInfof("⚙️  Scan interval: %v", at.config.ScanInterval)

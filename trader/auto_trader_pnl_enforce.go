@@ -92,24 +92,26 @@ func (at *AutoTrader) positionInfosFromRaw(positions []map[string]interface{}) [
 		marginUsed := (quantity * markPrice) / float64(leverage)
 		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
-		posKey := at.pnlEnforcePosKey(symbol, side)
-		at.UpdatePeakPnL(symbol, side, pnlPct)
+		exchangePositionID := store.ExchangePositionIDFromMap(pos)
+		posKey := at.pnlEnforcePosKey(exchangePositionID, symbol, side)
+		at.UpdatePeakPnL(exchangePositionID, symbol, side, pnlPct)
 		at.peakPnLCacheMutex.RLock()
 		peakPnlPct := at.peakPnLCache[posKey]
 		at.peakPnLCacheMutex.RUnlock()
 
 		infos = append(infos, kernel.PositionInfo{
-			Symbol:           symbol,
-			Side:             side,
-			EntryPrice:       entryPrice,
-			MarkPrice:        markPrice,
-			Quantity:         quantity,
-			Leverage:         leverage,
-			UnrealizedPnL:    unrealizedPnl,
-			UnrealizedPnLPct: pnlPct,
-			PeakPnLPct:       peakPnlPct,
-			LiquidationPrice: liquidationPrice,
-			MarginUsed:       marginUsed,
+			Symbol:             symbol,
+			Side:               side,
+			EntryPrice:         entryPrice,
+			MarkPrice:          markPrice,
+			Quantity:           quantity,
+			Leverage:           leverage,
+			UnrealizedPnL:      unrealizedPnl,
+			UnrealizedPnLPct:   pnlPct,
+			PeakPnLPct:         peakPnlPct,
+			LiquidationPrice:   liquidationPrice,
+			MarginUsed:         marginUsed,
+			ExchangePositionID: exchangePositionID,
 		})
 	}
 	return infos
@@ -188,8 +190,8 @@ func (at *AutoTrader) isGridTradingMode() bool {
 	return cfg != nil && cfg.StrategyType == "grid_trading"
 }
 
-func (at *AutoTrader) pnlEnforcePosKey(symbol, side string) string {
-	return peakCacheKey(symbol, side)
+func (at *AutoTrader) pnlEnforcePosKey(exchangePositionID, symbol, side string) string {
+	return store.PeakCacheKey(exchangePositionID, symbol, side)
 }
 
 func (at *AutoTrader) getPnLEnforceTier(posKey string) int {
@@ -209,8 +211,8 @@ func (at *AutoTrader) setPnLEnforceTier(posKey string, tier int) {
 	}
 }
 
-func (at *AutoTrader) clearPnLEnforceTier(symbol, side string) {
-	posKey := at.pnlEnforcePosKey(symbol, side)
+func (at *AutoTrader) clearPnLEnforceTier(exchangePositionID, symbol, side string) {
+	posKey := at.pnlEnforcePosKey(exchangePositionID, symbol, side)
 	at.pnlEnforceTierMu.Lock()
 	delete(at.pnlEnforceTier, posKey)
 	at.pnlEnforceTierMu.Unlock()
@@ -238,8 +240,8 @@ func (at *AutoTrader) enforcePositionPnLRulesFromPositions(positions []kernel.Po
 
 	acted := 0
 	for _, pos := range positions {
-		posKey := at.pnlEnforcePosKey(pos.Symbol, pos.Side)
-		at.UpdatePeakPnL(pos.Symbol, pos.Side, pos.UnrealizedPnLPct)
+		posKey := at.pnlEnforcePosKey(pos.ExchangePositionID, pos.Symbol, pos.Side)
+		at.UpdatePeakPnL(pos.ExchangePositionID, pos.Symbol, pos.Side, pos.UnrealizedPnLPct)
 
 		at.peakPnLCacheMutex.RLock()
 		peak := at.peakPnLCache[posKey]
@@ -278,17 +280,18 @@ func (at *AutoTrader) enforcePositionPnLRulesFromPositions(positions []kernel.Po
 		}
 
 		if err := at.executeDecisionWithRecord(decision, actionRecord); err != nil {
-			at.logErrorf("❌ PnL enforce failed %s %s: %v", pos.Symbol, pos.Side, err)
+			at.alertPnLEnforceFailure(pos, reason, err, record, actionRecord)
 			if record != nil {
-				record.ExecutionLog = append(record.ExecutionLog, fmt.Sprintf("PnL enforce failed %s: %v", pos.Symbol, err))
+				record.Decisions = append(record.Decisions, *actionRecord)
 			}
 			continue
 		}
 
+		actionRecord.Success = true
 		at.setPnLEnforceTier(posKey, plan.Tier)
 		if plan.CloseRatio <= 0 || plan.CloseRatio >= 1 {
-			at.clearPnLEnforceTier(pos.Symbol, pos.Side)
-			at.ClearPeakPnLCache(pos.Symbol, pos.Side)
+			at.clearPnLEnforceTier(pos.ExchangePositionID, pos.Symbol, pos.Side)
+			at.ClearPeakPnLCache(pos.ExchangePositionID, pos.Symbol, pos.Side)
 		}
 
 		acted++
@@ -306,6 +309,64 @@ func (at *AutoTrader) enforcePositionPnLRulesFromPositions(positions []kernel.Po
 		logger.Infof("%s 🔒 Auto PnL enforcement acted on %d position(s) (independent of AI)", at.logTag(), acted)
 	}
 	return acted
+}
+
+func (at *AutoTrader) alertPnLEnforceFailure(
+	pos kernel.PositionInfo,
+	reason string,
+	err error,
+	record *store.DecisionRecord,
+	actionRecord *store.DecisionAction,
+) {
+	actionRecord.Success = false
+	actionRecord.Error = err.Error()
+
+	stillOpen := at.exchangeHasPosition(pos.Symbol, pos.Side)
+	alert := fmt.Sprintf("⚠️ ALERT forced close FAILED %s %s: %v", pos.Symbol, pos.Side, err)
+	if stillOpen {
+		alert += " — position STILL OPEN on exchange (UI/OKX may diverge)"
+	}
+	at.logErrorf("❌ %s | %s", reason, alert)
+
+	if record != nil {
+		record.Success = false
+		if record.ErrorMessage == "" {
+			record.ErrorMessage = fmt.Sprintf("PnL enforce failed %s %s: %v", pos.Symbol, pos.Side, err)
+		}
+		record.ExecutionLog = append(record.ExecutionLog,
+			fmt.Sprintf("⚠️ ALERT PnL enforce failed %s %s: %v", pos.Symbol, pos.Side, err))
+		if stillOpen {
+			record.ExecutionLog = append(record.ExecutionLog,
+				fmt.Sprintf("⚠️ ALERT %s %s still open on exchange after failed enforce close", pos.Symbol, pos.Side))
+		}
+	}
+}
+
+func (at *AutoTrader) exchangeHasPosition(symbol, side string) bool {
+	positions, err := at.trader.GetPositions()
+	if err != nil {
+		return false
+	}
+	wantSide := strings.ToLower(strings.TrimSpace(side))
+	for _, p := range positions {
+		sym, ok1 := p["symbol"].(string)
+		ps, ok2 := p["side"].(string)
+		if !ok1 || !ok2 || sym != symbol {
+			continue
+		}
+		if strings.ToLower(ps) != wantSide {
+			continue
+		}
+		qty := 0.0
+		if amt, ok := p["positionAmt"].(float64); ok {
+			if amt < 0 {
+				amt = -amt
+			}
+			qty = amt
+		}
+		return qty > 0
+	}
+	return false
 }
 
 // refreshTradingContextAfterPnLEnforce rebuilds ctx so AI sees post-enforcement positions and balances.

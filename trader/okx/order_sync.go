@@ -162,6 +162,21 @@ func (t *OKXTrader) SyncOrdersFromOKX(traderID string, exchangeID string, exchan
 
 	logger.Infof("🔄 Syncing OKX trades from: %s", startTime.Format(time.RFC3339))
 
+	if rawPos, posErr := t.GetPositions(); posErr != nil {
+		logger.Infof("⚠️ Reconcile before OKX sync: failed to get positions: %v", posErr)
+	} else {
+		liveKeys := store.BuildLivePositionKeys(rawPos)
+		livePosIDs := store.BuildLiveExchangePositionIDs(rawPos)
+		if closed, recErr := st.Position().ReconcileOpenPositions(traderID, liveKeys, livePosIDs); recErr != nil {
+			logger.Infof("⚠️ Reconcile before OKX sync: %v", recErr)
+		} else if closed > 0 {
+			logger.Infof("🧹 Reconciled %d stale OPEN position row(s) before OKX trade sync", closed)
+		}
+		if bindErr := st.Position().BindLiveExchangePositionIDs(traderID, exchangeID, rawPos); bindErr != nil {
+			logger.Infof("⚠️ Bind exchange position ids before OKX sync: %v", bindErr)
+		}
+	}
+
 	// Use GetTrades method to fetch trade records
 	trades, err := t.GetTrades(startTime, 100)
 	if err != nil {

@@ -89,6 +89,23 @@ export function translateExecutionLogLine(line: string, language: Language): str
     return `盈利率强制平仓失败 ${pnlFail[1]}：${pnlFail[2]}`
   }
 
+  const pnlAlert = s.match(/^⚠️ ALERT PnL enforce failed (\S+) (\S+):\s*(.+)$/)
+  if (pnlAlert) {
+    const side = pnlAlert[2] === 'long' ? '多头' : pnlAlert[2] === 'short' ? '空头' : pnlAlert[2]
+    return `⚠️ 告警：代码强制平仓失败 ${pnlAlert[1]} ${side}：${pnlAlert[3]}`
+  }
+
+  const stillOpen = s.match(/^⚠️ ALERT (\S+) (\S+) still open on exchange after failed enforce close$/)
+  if (stillOpen) {
+    const side = stillOpen[2] === 'long' ? '多头' : stillOpen[2] === 'short' ? '空头' : stillOpen[2]
+    return `⚠️ 告警：${stillOpen[1]} ${side} 强制平仓失败后交易所仍有持仓（界面与 OKX 可能不一致）`
+  }
+
+  const tickConflict = s.match(/^⚠️ (.+): tick vs AI conflict → wait \((.+)\)$/)
+  if (tickConflict) {
+    return `⚠️ ${tickConflict[1]}：Tick 与 AI 方向冲突 → 观望（${tickConflict[2]}）`
+  }
+
   const refresh = s.match(/^Refreshed trading context after auto PnL enforcement \((\d+) position action\(s\)\)$/)
   if (refresh) {
     return `盈利率强制平仓后已刷新交易上下文（${refresh[1]} 个仓位操作）`
@@ -116,6 +133,23 @@ function translateUnavailableReason(reason: string): string {
   if (trimmed === 'AI did not output a decision for this candidate') {
     return 'AI 未对该候选币种输出决策'
   }
+  const oiLow = trimmed.match(/^open interest too low \(([\d.]+)M USD < ([\d.]+)M\)$/)
+  if (oiLow) {
+    return `持仓量过低（${oiLow[1]}M 美元 < ${oiLow[2]}M）`
+  }
+  const emptyTf = trimmed.match(/^Primary timeframe (\S+) K-line data is empty$/)
+  if (emptyTf) {
+    return `主周期 ${emptyTf[1]} K 线数据为空（请检查行情源或稍后重试）`
+  }
+  if (trimmed.startsWith('OKX simulated klines')) {
+    return trimmed
+      .replace(/^OKX simulated klines failed for /, 'OKX 模拟盘 K 线获取失败：')
+      .replace(/^OKX simulated klines empty for /, 'OKX 模拟盘 K 线为空：')
+      .replace(/ \(live fallback: /, '（实盘回退失败：')
+  }
+  if (trimmed.startsWith('forced close mismatch:')) {
+    return trimmed.replace(/^forced close mismatch: /, '强制平仓与交易所状态不一致：')
+  }
   return trimmed
 }
 
@@ -134,6 +168,17 @@ export function translateDecisionReasoning(text: string, language: Language): st
   }
   if (text.includes('[CODE ENFORCED PnL]') || text.includes('stop_loss:') || text.includes('lock_tier')) {
     return translateEnforcedPnLText(text)
+  }
+  if (text.includes('tick conflict')) {
+    return text
+      .replace(/CODE: downgraded open_long → wait — tick conflict: /g, '代码：开多降级为观望 — Tick 冲突：')
+      .replace(/CODE: downgraded open_short → wait — tick conflict: /g, '代码：开空降级为观望 — Tick 冲突：')
+      .replace(/tick short sell=/g, 'Tick 偏空 卖压=')
+      .replace(/tick long buy=/g, 'Tick 偏多 买压=')
+      .replace(/tick sell pressure /g, 'Tick 卖压 ')
+      .replace(/tick buy pressure /g, 'Tick 买压 ')
+      .replace(/ > buy /g, ' > 买压 ')
+      .replace(/ > sell /g, ' > 卖压 ')
   }
   if (text.startsWith('pre-decision:')) {
     return translateExecutionLogLine(text, language)

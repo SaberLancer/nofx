@@ -243,18 +243,23 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 			continue
 		}
 
-		// Liquidity filter (skip for xyz dex assets - they don't have OI data from Binance)
+		// Liquidity filter (skip for xyz dex, demo/simulated trading, or missing OI feed)
 		isExistingPosition := positionSymbols[coin.Symbol]
 		isXyzAsset := market.IsXyzDexAsset(coin.Symbol)
-		if !isExistingPosition && !isXyzAsset && data.OpenInterest != nil && data.CurrentPrice > 0 {
-			oiValue := data.OpenInterest.Latest * data.CurrentPrice
-			oiValueInMillions := oiValue / 1_000_000
-			if oiValueInMillions < minOIThresholdMillions {
-				reason := fmt.Sprintf("open interest too low (%.2fM USD < %.1fM)", oiValueInMillions, minOIThresholdMillions)
-				ctx.MarketDataFailures[coin.Symbol] = reason
-				logger.Infof("⚠️  %s OI value too low (%.2fM USD < %.1fM), skipping coin",
-					coin.Symbol, oiValueInMillions, minOIThresholdMillions)
-				continue
+		if !isExistingPosition && !isXyzAsset && !ctx.KlineSimulated && data.OpenInterest != nil && data.CurrentPrice > 0 {
+			oiLatest := data.OpenInterest.Latest
+			if oiLatest <= 0 {
+				logger.Infof("⚠️  %s OI data unavailable (0), skipping liquidity filter", coin.Symbol)
+			} else {
+				oiValue := oiLatest * data.CurrentPrice
+				oiValueInMillions := oiValue / 1_000_000
+				if oiValueInMillions < minOIThresholdMillions {
+					reason := fmt.Sprintf("open interest too low (%.2fM USD < %.1fM)", oiValueInMillions, minOIThresholdMillions)
+					ctx.MarketDataFailures[coin.Symbol] = reason
+					logger.Infof("⚠️  %s OI value too low (%.2fM USD < %.1fM), skipping coin",
+						coin.Symbol, oiValueInMillions, minOIThresholdMillions)
+					continue
+				}
 			}
 		}
 

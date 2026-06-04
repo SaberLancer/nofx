@@ -240,6 +240,14 @@ func (at *AutoTrader) runCycle() error {
 		}
 	}
 
+	if aiDecision != nil {
+		if tickNotes := at.sanitizeOpenDecisionsAgainstTick(aiDecision.Decisions); len(tickNotes) > 0 {
+			for _, note := range tickNotes {
+				record.ExecutionLog = append(record.ExecutionLog, "⚠️ "+note)
+			}
+		}
+	}
+
 	// AI succeeded — reset failure counter and deactivate safe mode
 	if at.consecutiveAIFailures > 0 {
 		at.logInfof("✅ AI recovered after %d consecutive failures", at.consecutiveAIFailures)
@@ -407,6 +415,8 @@ func (at *AutoTrader) buildTradingContext(pnlRecord *store.DecisionRecord) (*ker
 		return nil, 0, fmt.Errorf("failed to get positions: %w", err)
 	}
 
+	at.reconcileOpenPositionsWithExchange(positions)
+
 	var positionInfos []kernel.PositionInfo
 	totalMarginUsed := 0.0
 
@@ -416,6 +426,7 @@ func (at *AutoTrader) buildTradingContext(pnlRecord *store.DecisionRecord) (*ker
 	for _, pos := range positions {
 		symbol := pos["symbol"].(string)
 		side := pos["side"].(string)
+		exchangePositionID := store.ExchangePositionIDFromMap(pos)
 		entryPrice := pos["entryPrice"].(float64)
 		markPrice := pos["markPrice"].(float64)
 		quantity := pos["positionAmt"].(float64)
@@ -443,17 +454,23 @@ func (at *AutoTrader) buildTradingContext(pnlRecord *store.DecisionRecord) (*ker
 		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
 		// Get position open time from exchange (preferred) or fallback to local tracking
-		posKey := peakCacheKey(symbol, side)
-		at.UpdatePeakPnL(symbol, side, pnlPct)
+		posKey := store.PeakCacheKey(exchangePositionID, symbol, side)
+		at.UpdatePeakPnL(exchangePositionID, symbol, side, pnlPct)
 		currentPositionKeys[posKey] = true
 
 		var updateTime int64
 		// Priority 1: Get from database (trader_positions table) - most accurate
 		if at.store != nil {
-			if dbPos, err := at.store.Position().GetOpenPositionBySymbol(at.id, symbol, side); err == nil && dbPos != nil {
-				if dbPos.EntryTime > 0 {
-					updateTime = dbPos.EntryTime
-				}
+			var dbPos *store.TraderPosition
+			var err error
+			if exchangePositionID != "" && at.exchangeID != "" {
+				dbPos, err = at.store.Position().GetOpenPositionByExchangePositionID(at.exchangeID, exchangePositionID)
+			}
+			if dbPos == nil && err == nil {
+				dbPos, err = at.store.Position().GetOpenPositionBySymbol(at.id, symbol, side)
+			}
+			if err == nil && dbPos != nil && dbPos.EntryTime > 0 {
+				updateTime = dbPos.EntryTime
 			}
 		}
 		// Priority 2: Get from exchange API (Bybit: createdTime, OKX: createdTime)
@@ -488,6 +505,7 @@ func (at *AutoTrader) buildTradingContext(pnlRecord *store.DecisionRecord) (*ker
 			LiquidationPrice:   liquidationPrice,
 			MarginUsed:         marginUsed,
 			UpdateTime:         updateTime,
+			ExchangePositionID: exchangePositionID,
 			AutoPnLEnforceTier: at.getPnLEnforceTier(posKey),
 		})
 	}

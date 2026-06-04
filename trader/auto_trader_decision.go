@@ -106,6 +106,7 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get positions: %w", err)
 	}
 
+	at.reconcileOpenPositionsWithExchange(rawPositions)
 	at.onPositionsUpdatedRaw(rawPositions, "account_info", nil)
 
 	return at.buildAccountInfoFromData(balance, rawPositions), nil
@@ -123,6 +124,7 @@ func (at *AutoTrader) GetTraderSnapshot() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get positions: %w", err)
 	}
 
+	at.reconcileOpenPositionsWithExchange(rawPositions)
 	at.onPositionsUpdatedRaw(rawPositions, "account_snapshot", nil)
 
 	snapshot := at.buildAccountInfoFromData(balance, rawPositions)

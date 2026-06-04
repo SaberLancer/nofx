@@ -73,7 +73,13 @@ func isSyntheticExchangePositionID(id string) bool {
 	id = strings.TrimSpace(id)
 	return id == "" ||
 		strings.HasPrefix(id, "sync_") ||
-		strings.HasPrefix(id, "close_only_")
+		strings.HasPrefix(id, "close_only_") ||
+		strings.HasPrefix(id, "snapshot_")
+}
+
+// IsSyntheticExchangePositionID reports whether an exchange_position_id is a local placeholder, not an exchange posId.
+func IsSyntheticExchangePositionID(id string) bool {
+	return isSyntheticExchangePositionID(id)
 }
 
 // preferClosedPosition returns true if a should replace b when deduplicating display rows.
