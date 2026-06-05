@@ -17,7 +17,7 @@ interface ChartTabsProps {
 }
 
 type ChartTab = 'equity' | 'kline'
-type Interval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
+type Interval = '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
 type MarketType = 'hyperliquid' | 'crypto' | 'stocks' | 'forex' | 'metals'
 
 interface SymbolInfo {
@@ -37,6 +37,7 @@ const MARKET_CONFIG = {
 
 const INTERVALS: { value: Interval; label: string }[] = [
   { value: '1m', label: '1m' },
+  { value: '3m', label: '3m' },
   { value: '5m', label: '5m' },
   { value: '15m', label: '15m' },
   { value: '30m', label: '30m' },
