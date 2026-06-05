@@ -18,8 +18,9 @@ type strategyPresetDef struct {
 }
 
 type strategyPresetLocale struct {
-	shortTerm      strategyPresetI18n
-	ultraShortTerm strategyPresetI18n
+	shortTerm           strategyPresetI18n
+	ultraShortTerm      strategyPresetI18n
+	oscillationSwing    strategyPresetI18n
 }
 
 type strategyPresetI18n struct {
@@ -37,6 +38,10 @@ func strategyPresetLocales(lang string) strategyPresetLocale {
 				name:        "超短线策略",
 				description: "超短线/剥头皮模板。主周期 3m，多周期 1m/3m/5m/15m，启用 TICK 前置门禁，更快锁盈与更高交易频率。",
 			},
+			oscillationSwing: strategyPresetI18n{
+				name:        "震荡高抛低吸策略",
+				description: "震荡市模板。主周期 15m，区间高抛低吸，关闭震荡门禁以允许区间交易，适合横盘反复行情。",
+			},
 		},
 		"en": {
 			shortTerm: strategyPresetI18n{
@@ -47,6 +52,10 @@ func strategyPresetLocales(lang string) strategyPresetLocale {
 				name:        "Ultra Short-Term Strategy",
 				description: "Scalping template. Primary 3m, TFs 1m/3m/5m/15m, pre-decision tick gate enabled, faster locks and higher trade frequency.",
 			},
+			oscillationSwing: strategyPresetI18n{
+				name:        "Oscillation Swing Strategy",
+				description: "Range-trading template. Primary 15m, buy-low sell-high in ranges; oscillation gate off for sideways markets.",
+			},
 		},
 		"id": {
 			shortTerm: strategyPresetI18n{
@@ -56,6 +65,10 @@ func strategyPresetLocales(lang string) strategyPresetLocale {
 			ultraShortTerm: strategyPresetI18n{
 				name:        "Strategi Ultra Pendek",
 				description: "Template scalping. Primary 3m, TF 1m/3m/5m/15m, pre-decision tick gate aktif, lock profit cepat.",
+			},
+			oscillationSwing: strategyPresetI18n{
+				name:        "Strategi Swing Osilasi",
+				description: "Template range. Primary 15m, buy-low sell-high; oscillation gate off untuk pasar sideways.",
 			},
 		},
 	}
@@ -81,6 +94,27 @@ func applyShortTermStrategyConfig(c *store.StrategyConfig) {
 	c.RiskControl.PeakPullbackPts = 3
 
 	applyShortTermPromptSections(c)
+}
+
+func applyOscillationSwingStrategyConfig(c *store.StrategyConfig) {
+	c.Indicators.Klines.PrimaryTimeframe = "15m"
+	c.Indicators.Klines.LongerTimeframe = "1h"
+	c.Indicators.Klines.SelectedTimeframes = []string{"5m", "15m", "30m"}
+	c.Indicators.Klines.EnableMultiTimeframe = true
+
+	disabled := false
+	c.RiskControl.OscillationGateEnabled = &disabled
+	c.RiskControl.MinConfidence = 70
+	c.RiskControl.MinRiskRewardRatio = 2.0
+	c.RiskControl.LockProfitPnLPct = 5
+	c.RiskControl.LockProfitSecondPnLPct = 8
+	c.RiskControl.ExitProtectPnLPct = 6
+	c.RiskControl.StopLossPnLPct = -3
+	c.RiskControl.MaxPositions = 3
+
+	c.PreDecision.Enabled = false
+
+	applyOscillationSwingPromptSections(c)
 }
 
 func applyUltraShortTermStrategyConfig(c *store.StrategyConfig) {
@@ -137,6 +171,32 @@ func applyShortTermPromptSections(c *store.StrategyConfig) {
 - Chop, conflicting signals, or immediate re-entry after close → wait`
 }
 
+func applyOscillationSwingPromptSections(c *store.StrategyConfig) {
+	if c.Language == "zh" {
+		c.PromptSections.TradingFrequency = `# ⏱️ 交易频率（震荡高抛低吸）
+
+- 目标：每天约 3–6 笔；仅在明确区间上下沿附近交易
+- 单笔持仓建议 20–120 分钟；接近区间中轨且动能衰竭时减仓
+- 突破区间上沿/下沿并确认时，停止逆势高抛低吸思路`
+		c.PromptSections.EntryStandards = `# 🎯 入场标准（震荡高抛低吸）
+
+- 价格在区间内反复测试支撑/阻力；ADX 偏低或区间窄幅时优先高抛低吸
+- 靠近区间下沿做多、靠近上沿做空；禁止在区间中部追涨杀跌
+- 若多周期出现一致突破信号，按趋势思路处理或观望`
+		return
+	}
+	c.PromptSections.TradingFrequency = `# ⏱️ Trading Frequency (Range Swing)
+
+- Target: ~3–6 trades/day near range edges only
+- Typical hold 20–120 minutes; reduce size near range midline
+- Stop range logic after confirmed breakout`
+	c.PromptSections.EntryStandards = `# 🎯 Entry Standards (Range Swing)
+
+- Price oscillates between support/resistance; prefer range trades when ADX is low
+- Long near range lows, short near range highs; avoid mid-range chase
+- On confirmed breakout across timeframes, switch to trend logic or wait`
+}
+
 func applyUltraShortTermPromptSections(c *store.StrategyConfig) {
 	if c.Language == "zh" {
 		c.PromptSections.TradingFrequency = `# ⏱️ 交易频率（超短线）
@@ -177,6 +237,12 @@ func shortTermPresetDefinitions(lang string) []strategyPresetDef {
 			description: locale.ultraShortTerm.description,
 			isActive:    false,
 			applyConfig: applyUltraShortTermStrategyConfig,
+		},
+		{
+			name:        locale.oscillationSwing.name,
+			description: locale.oscillationSwing.description,
+			isActive:    false,
+			applyConfig: applyOscillationSwingStrategyConfig,
 		},
 	}
 }

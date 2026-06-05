@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import type { AIModel, Exchange, CreateTraderRequest, Strategy, TraderConfigData } from '../../types'
+import type { AIModel, Exchange, CreateTraderRequest, Strategy, TraderConfigData, RegimeDetectionConfig } from '../../types'
+import { DEFAULT_REGIME_DETECTION } from '../../types/trading'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { t } from '../../i18n/translations'
-import { Pencil, Plus, X as IconX, Sparkles, ExternalLink, UserPlus } from 'lucide-react'
+import { Pencil, Plus, X as IconX, Sparkles, ExternalLink, UserPlus, GitBranch } from 'lucide-react'
 import { httpClient } from '../../lib/httpClient'
 import { NofxSelect } from '../ui/select'
 
@@ -24,6 +25,55 @@ function getStrategyAIConfig(strategy: Strategy) {
 }
 
 // 交易所注册链接配置
+const STRUCTURE_TIMEFRAMES = ['5m', '15m', '30m', '1h']
+
+function mergeRegimeDetection(raw?: Partial<RegimeDetectionConfig>): RegimeDetectionConfig {
+  const base = DEFAULT_REGIME_DETECTION
+  if (!raw) return { ...base, layer_1h: { ...base.layer_1h }, layer_15m: { ...base.layer_15m }, layer_3m: { ...base.layer_3m } }
+  return {
+    layer_1h: { ...base.layer_1h, ...raw.layer_1h },
+    layer_15m: { ...base.layer_15m, ...raw.layer_15m },
+    layer_3m: { ...base.layer_3m, ...raw.layer_3m },
+  }
+}
+
+function RegimeNumField({
+  label,
+  hint,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+}: {
+  label: string
+  hint?: string
+  value: number
+  onChange: (v: number) => void
+  min?: number
+  max?: number
+  step?: number
+}) {
+  return (
+    <div>
+      <label className="text-xs text-[#EAECEF] block mb-1">{label}</label>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => {
+          const v = Number(e.target.value)
+          if (Number.isFinite(v)) onChange(v)
+        }}
+        className="w-full px-2 py-1.5 text-sm bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF]"
+        min={min}
+        max={max}
+        step={step}
+      />
+      {hint && <p className="text-[10px] text-[#848E9C] mt-1">{hint}</p>}
+    </div>
+  )
+}
+
 const EXCHANGE_REGISTRATION_LINKS: Record<string, { url: string; hasReferral?: boolean }> = {
   binance: { url: 'https://www.binance.com/join?ref=NOFXENG', hasReferral: true },
   okx: { url: 'https://www.okx.com/join/1865360', hasReferral: true },
@@ -39,9 +89,22 @@ interface FormState {
   ai_model: string
   exchange_id: string
   strategy_id: string
+  regime_switch_enabled: boolean
+  trend_strategy_id: string
+  oscillation_strategy_id: string
+  regime_confirm_cycles: number
+  regime_detection: RegimeDetectionConfig
   is_cross_margin: boolean
   show_in_competition: boolean
   scan_interval_minutes: number
+}
+
+function findStrategyByNameHint(strategies: Strategy[], hints: string[]): string {
+  for (const hint of hints) {
+    const match = strategies.find((s) => s.name.includes(hint))
+    if (match) return match.id
+  }
+  return ''
 }
 
 interface TraderConfigModalProps {
@@ -69,11 +132,53 @@ export function TraderConfigModal({
     ai_model: '',
     exchange_id: '',
     strategy_id: '',
+    regime_switch_enabled: false,
+    trend_strategy_id: '',
+    oscillation_strategy_id: '',
+    regime_confirm_cycles: 2,
+    regime_detection: { ...DEFAULT_REGIME_DETECTION },
     is_cross_margin: true,
     show_in_competition: true,
     scan_interval_minutes: 3,
   })
   const [isSaving, setIsSaving] = useState(false)
+
+  const updateLayer1H = <K extends keyof RegimeDetectionConfig['layer_1h']>(
+    key: K,
+    value: RegimeDetectionConfig['layer_1h'][K]
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      regime_detection: {
+        ...prev.regime_detection,
+        layer_1h: { ...prev.regime_detection.layer_1h, [key]: value },
+      },
+    }))
+  }
+  const updateLayer15m = <K extends keyof RegimeDetectionConfig['layer_15m']>(
+    key: K,
+    value: RegimeDetectionConfig['layer_15m'][K]
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      regime_detection: {
+        ...prev.regime_detection,
+        layer_15m: { ...prev.regime_detection.layer_15m, [key]: value },
+      },
+    }))
+  }
+  const updateLayer3m = <K extends keyof RegimeDetectionConfig['layer_3m']>(
+    key: K,
+    value: RegimeDetectionConfig['layer_3m'][K]
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      regime_detection: {
+        ...prev.regime_detection,
+        layer_3m: { ...prev.regime_detection.layer_3m, [key]: value },
+      },
+    }))
+  }
   const [strategies, setStrategies] = useState<Strategy[]>([])
 
   // 获取用户的策略列表
@@ -84,15 +189,25 @@ export function TraderConfigModal({
         if (result.success && result.data?.strategies) {
           const strategyList = result.data.strategies
           setStrategies(strategyList)
-          // 如果没有选择策略，默认选中激活的策略
-          if (!formData.strategy_id && !isEditMode) {
-            const activeStrategy = strategyList.find(s => s.is_active)
-            if (activeStrategy) {
-              setFormData(prev => ({ ...prev, strategy_id: activeStrategy.id }))
-            } else if (strategyList.length > 0) {
-              setFormData(prev => ({ ...prev, strategy_id: strategyList[0].id }))
+          setFormData((prev) => {
+            const next = { ...prev }
+            if (!next.strategy_id && !isEditMode) {
+              const activeStrategy = strategyList.find((s) => s.is_active)
+              next.strategy_id = activeStrategy?.id || strategyList[0]?.id || ''
             }
-          }
+            if (next.regime_switch_enabled) {
+              if (!next.trend_strategy_id) {
+                next.trend_strategy_id = findStrategyByNameHint(strategyList, ['短线', 'Short-Term', '波段'])
+              }
+              if (!next.oscillation_strategy_id) {
+                next.oscillation_strategy_id = findStrategyByNameHint(strategyList, ['震荡', 'Oscillation', '高抛低吸'])
+              }
+              if (next.trend_strategy_id && !next.strategy_id) {
+                next.strategy_id = next.trend_strategy_id
+              }
+            }
+            return next
+          })
         }
       } catch (error) {
         console.error('Failed to fetch strategies:', error)
@@ -108,6 +223,11 @@ export function TraderConfigModal({
       setFormData({
         ...traderData,
         strategy_id: traderData.strategy_id || '',
+        regime_switch_enabled: traderData.regime_switch_enabled ?? false,
+        trend_strategy_id: traderData.trend_strategy_id || '',
+        oscillation_strategy_id: traderData.oscillation_strategy_id || '',
+        regime_confirm_cycles: traderData.regime_confirm_cycles || 2,
+        regime_detection: mergeRegimeDetection(traderData.regime_detection),
       })
     } else if (!isEditMode) {
       setFormData({
@@ -115,6 +235,11 @@ export function TraderConfigModal({
         ai_model: availableModels[0]?.id || '',
         exchange_id: availableExchanges[0]?.id || '',
         strategy_id: '',
+        regime_switch_enabled: false,
+        trend_strategy_id: '',
+        oscillation_strategy_id: '',
+        regime_confirm_cycles: 2,
+        regime_detection: { ...DEFAULT_REGIME_DETECTION },
         is_cross_margin: true,
         show_in_competition: true,
         scan_interval_minutes: 3,
@@ -141,7 +266,14 @@ export function TraderConfigModal({
         name: formData.trader_name,
         ai_model_id: formData.ai_model,
         exchange_id: formData.exchange_id,
-        strategy_id: formData.strategy_id,
+        strategy_id: formData.regime_switch_enabled
+          ? (formData.trend_strategy_id || formData.strategy_id)
+          : formData.strategy_id,
+        regime_switch_enabled: formData.regime_switch_enabled,
+        trend_strategy_id: formData.trend_strategy_id,
+        oscillation_strategy_id: formData.oscillation_strategy_id,
+        regime_confirm_cycles: formData.regime_confirm_cycles,
+        regime_detection: formData.regime_detection,
         is_cross_margin: formData.is_cross_margin,
         show_in_competition: formData.show_in_competition,
         scan_interval_minutes: formData.scan_interval_minutes,
@@ -472,6 +604,250 @@ export function TraderConfigModal({
             </div>
           </div>
 
+          {/* Step 4: Regime-based auto strategy switching */}
+          <div className="bg-[#0B0E11] border border-[#2B3139] rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-[#EAECEF] mb-5 flex items-center gap-2">
+              <span className="text-[#F0B90B]">4</span>
+              {language === 'zh' ? '市场状态自动切换策略' : 'Auto Strategy by Market Regime'}
+              <GitBranch className="w-4 h-4 text-[#F0B90B]" />
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-[#EAECEF] block mb-2">
+                  {language === 'zh' ? '启用自动切换' : 'Enable auto switch'}
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData((prev) => {
+                        const next = { ...prev, regime_switch_enabled: true }
+                        if (!next.trend_strategy_id) {
+                          next.trend_strategy_id = findStrategyByNameHint(strategies, ['短线', 'Short-Term', '波段'])
+                        }
+                        if (!next.oscillation_strategy_id) {
+                          next.oscillation_strategy_id = findStrategyByNameHint(strategies, ['震荡', 'Oscillation', '高抛低吸'])
+                        }
+                        if (next.trend_strategy_id) {
+                          next.strategy_id = next.trend_strategy_id
+                        }
+                        return next
+                      })
+                    }}
+                    className={`flex-1 px-3 py-2 rounded text-sm ${
+                      formData.regime_switch_enabled
+                        ? 'bg-[#F0B90B] text-black'
+                        : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                    }`}
+                  >
+                    {language === 'zh' ? '启用' : 'On'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleInputChange('regime_switch_enabled', false)}
+                    className={`flex-1 px-3 py-2 rounded text-sm ${
+                      !formData.regime_switch_enabled
+                        ? 'bg-[#F0B90B] text-black'
+                        : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                    }`}
+                  >
+                    {language === 'zh' ? '关闭' : 'Off'}
+                  </button>
+                </div>
+              </div>
+
+              {formData.regime_switch_enabled && (
+                <>
+                  <p className="text-xs text-[#848E9C] leading-relaxed">
+                    {language === 'zh'
+                      ? '按 1H 大局 → 15m 决策台 → 3m 扳机 三层配置。切换判定以 1H ADX 为主、15m 灰区确认为辅；3m 参数供止损参考。与策略模板无关。'
+                      : '1H bias → 15m desk → 3m trigger. Switching uses 1H+15m; 3m is SL reference only.'}
+                  </p>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="text-sm text-[#EAECEF] block mb-2">
+                        {language === 'zh' ? '趋势市场策略（日内波段）' : 'Trend strategy (intraday swing)'}
+                      </label>
+                      <NofxSelect
+                        value={formData.trend_strategy_id}
+                        onChange={(val) => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            trend_strategy_id: val,
+                            strategy_id: val || prev.strategy_id,
+                          }))
+                        }}
+                        className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF]"
+                        options={strategies.map((strategy) => ({
+                          value: strategy.id,
+                          label: strategy.name,
+                        }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-[#EAECEF] block mb-2">
+                        {language === 'zh' ? '震荡市场策略（高抛低吸）' : 'Oscillation strategy (range trading)'}
+                      </label>
+                      <NofxSelect
+                        value={formData.oscillation_strategy_id}
+                        onChange={(val) => handleInputChange('oscillation_strategy_id', val)}
+                        className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF]"
+                        options={strategies.map((strategy) => ({
+                          value: strategy.id,
+                          label: strategy.name,
+                        }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-[#EAECEF] block mb-2">
+                        {language === 'zh' ? '确认周期数' : 'Confirm cycles'}
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.regime_confirm_cycles}
+                        onChange={(e) => {
+                          const parsed = Number(e.target.value)
+                          const safe = Number.isFinite(parsed) ? Math.min(10, Math.max(1, parsed)) : 2
+                          handleInputChange('regime_confirm_cycles', safe)
+                        }}
+                        className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                        min={1}
+                        max={10}
+                        step={1}
+                      />
+                      <p className="text-xs text-[#848E9C] mt-1">
+                        {language === 'zh'
+                          ? '连续 N 个决策周期检测到同一市场状态后才切换，避免频繁抖动。'
+                          : 'Switch only after N consecutive cycles detect the same regime.'}
+                      </p>
+                    </div>
+
+                    {/* 1H 层 */}
+                    <div className="border-t border-[#2B3139] pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-[#F0B90B]">
+                          {language === 'zh' ? '【1H 层】大局 Bias' : '[1H] Bias'}
+                        </h4>
+                        <label className="flex items-center gap-2 text-xs text-[#848E9C] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.regime_detection.layer_1h.enabled}
+                            onChange={(e) => updateLayer1H('enabled', e.target.checked)}
+                            className="accent-yellow-500"
+                          />
+                          {language === 'zh' ? '启用' : 'On'}
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-[#848E9C]">
+                        {language === 'zh'
+                          ? 'EMA 定主方向；ADX<震荡阈值=震荡日，ADX>趋势阈值=趋势日；中间灰区交给 15m。'
+                          : 'EMA direction; ADX thresholds define ranging vs trending day.'}
+                      </p>
+                      {formData.regime_detection.layer_1h.enabled && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <RegimeNumField label="EMA Fast" hint={language === 'zh' ? '快线周期' : 'Fast EMA'} value={formData.regime_detection.layer_1h.ema_fast} onChange={(v) => updateLayer1H('ema_fast', Math.round(v))} min={5} max={100} />
+                          <RegimeNumField label="EMA Slow" hint={language === 'zh' ? '慢线周期' : 'Slow EMA'} value={formData.regime_detection.layer_1h.ema_slow} onChange={(v) => updateLayer1H('ema_slow', Math.round(v))} min={10} max={200} />
+                          <RegimeNumField label="ADX Period" value={formData.regime_detection.layer_1h.adx_period} onChange={(v) => updateLayer1H('adx_period', Math.round(v))} min={7} max={28} />
+                          <RegimeNumField label={language === 'zh' ? '1H K线根数' : '1H bars'} value={formData.regime_detection.layer_1h.kline_count} onChange={(v) => updateLayer1H('kline_count', Math.round(v))} min={30} max={200} />
+                          <RegimeNumField label={language === 'zh' ? '震荡日 ADX<' : 'Ranging ADX <'} hint={language === 'zh' ? '低于此值→震荡日' : 'Below → range day'} value={formData.regime_detection.layer_1h.adx_ranging_below} onChange={(v) => updateLayer1H('adx_ranging_below', v)} min={10} max={40} step={0.5} />
+                          <RegimeNumField label={language === 'zh' ? '趋势日 ADX≥' : 'Trend ADX ≥'} hint={language === 'zh' ? '高于此值→趋势日' : 'Above → trend day'} value={formData.regime_detection.layer_1h.adx_trend_above} onChange={(v) => updateLayer1H('adx_trend_above', v)} min={15} max={50} step={0.5} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 15m 层 */}
+                    <div className="border-t border-[#2B3139] pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-[#F0B90B]">
+                          {language === 'zh' ? '【15m 层】决策台' : '[15m] Decision desk'}
+                        </h4>
+                        <label className="flex items-center gap-2 text-xs text-[#848E9C] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.regime_detection.layer_15m.enabled}
+                            onChange={(e) => updateLayer15m('enabled', e.target.checked)}
+                            className="accent-yellow-500"
+                          />
+                          {language === 'zh' ? '灰区确认' : 'Gray-zone confirm'}
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-[#848E9C]">
+                        {language === 'zh'
+                          ? 'EMA 结构、ADX+ATR/BBW 厚薄、RSI、成交量均线；1H 灰区或未决时由此裁定。'
+                          : 'EMA, ADX, BBW, RSI, volume MA for gray-zone resolution.'}
+                      </p>
+                      {formData.regime_detection.layer_15m.enabled && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <RegimeNumField label="EMA 20" value={formData.regime_detection.layer_15m.ema_fast} onChange={(v) => updateLayer15m('ema_fast', Math.round(v))} min={5} max={50} />
+                          <RegimeNumField label="EMA 50" value={formData.regime_detection.layer_15m.ema_slow} onChange={(v) => updateLayer15m('ema_slow', Math.round(v))} min={10} max={100} />
+                          <RegimeNumField label="ADX(14) 震荡<" value={formData.regime_detection.layer_15m.adx_ranging_below} onChange={(v) => updateLayer15m('adx_ranging_below', v)} min={10} max={40} step={0.5} />
+                          <RegimeNumField label="ADX(14) 趋势≥" value={formData.regime_detection.layer_15m.adx_trend_above} onChange={(v) => updateLayer15m('adx_trend_above', v)} min={15} max={50} step={0.5} />
+                          <RegimeNumField label="BBW 薄< (%)" hint={language === 'zh' ? '布林带宽低于此→偏震荡' : 'Thin BB → range'} value={formData.regime_detection.layer_15m.bbw_thin_below_pct} onChange={(v) => updateLayer15m('bbw_thin_below_pct', v)} min={1} max={10} step={0.1} />
+                          <RegimeNumField label="RSI Period" value={formData.regime_detection.layer_15m.rsi_period} onChange={(v) => updateLayer15m('rsi_period', Math.round(v))} min={7} max={21} />
+                          <RegimeNumField label="ATR Period" value={formData.regime_detection.layer_15m.atr_period} onChange={(v) => updateLayer15m('atr_period', Math.round(v))} min={7} max={28} />
+                          <RegimeNumField label={language === 'zh' ? '成交量 MA' : 'Volume MA'} value={formData.regime_detection.layer_15m.volume_ma_period} onChange={(v) => updateLayer15m('volume_ma_period', Math.round(v))} min={5} max={50} />
+                          <RegimeNumField label={language === 'zh' ? '窄幅区间 %' : 'Max range %'} value={formData.regime_detection.layer_15m.max_range_pct} onChange={(v) => updateLayer15m('max_range_pct', v)} min={1} max={20} step={0.5} />
+                          <RegimeNumField label={language === 'zh' ? '15m K线根数' : '15m bars'} value={formData.regime_detection.layer_15m.kline_count} onChange={(v) => updateLayer15m('kline_count', Math.round(v))} min={28} max={200} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 3m 层 */}
+                    <div className="border-t border-[#2B3139] pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-[#F0B90B]">
+                          {language === 'zh' ? '【3m 层】扳机 / 止损参考' : '[3m] Trigger / SL ref'}
+                        </h4>
+                        <label className="flex items-center gap-2 text-xs text-[#848E9C] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.regime_detection.layer_3m.enabled}
+                            onChange={(e) => updateLayer3m('enabled', e.target.checked)}
+                            className="accent-yellow-500"
+                          />
+                          {language === 'zh' ? '记录配置' : 'Save ref'}
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-[#848E9C]">
+                        {language === 'zh'
+                          ? '15m 确认可吃单后，策略内用 3m 找入场；止损=ATR倍数或 15m 结构外。不参与自动切策略判定。'
+                          : 'Entry timing on 3m; SL = ATR multiple or structure. Not used for regime switch.'}
+                      </p>
+                      {formData.regime_detection.layer_3m.enabled && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <RegimeNumField label={language === 'zh' ? '止损 ATR 倍数' : 'SL ATR ×'} hint="默认 1.5" value={formData.regime_detection.layer_3m.atr_sl_multiplier} onChange={(v) => updateLayer3m('atr_sl_multiplier', v)} min={0.5} max={5} step={0.1} />
+                          <RegimeNumField label="ATR Period" value={formData.regime_detection.layer_3m.atr_period} onChange={(v) => updateLayer3m('atr_period', Math.round(v))} min={7} max={28} />
+                          <div>
+                            <label className="text-xs text-[#EAECEF] block mb-1">
+                              {language === 'zh' ? '结构止损周期' : 'Structure TF'}
+                            </label>
+                            <NofxSelect
+                              value={formData.regime_detection.layer_3m.structure_timeframe}
+                              onChange={(val) => updateLayer3m('structure_timeframe', val)}
+                              className="w-full px-2 py-1.5 text-sm bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF]"
+                              options={STRUCTURE_TIMEFRAMES.map((tf) => ({ value: tf, label: tf }))}
+                            />
+                          </div>
+                          <div className="flex items-end pb-1">
+                            <label className="flex items-center gap-2 text-xs text-[#EAECEF] cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formData.regime_detection.layer_3m.use_structure_sl}
+                                onChange={(e) => updateLayer3m('use_structure_sl', e.target.checked)}
+                                className="accent-yellow-500"
+                              />
+                              {language === 'zh' ? '允许 15m 结构外+buffer 止损' : '15m structure SL'}
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
         </div>
 
         {/* Footer */}
@@ -489,7 +865,12 @@ export function TraderConfigModal({
                 isSaving ||
                 !formData.trader_name ||
                 !formData.ai_model ||
-                !formData.exchange_id
+                !formData.exchange_id ||
+                (formData.regime_switch_enabled &&
+                  (!formData.trend_strategy_id ||
+                    !formData.oscillation_strategy_id ||
+                    formData.trend_strategy_id === formData.oscillation_strategy_id)) ||
+                (!formData.regime_switch_enabled && !formData.strategy_id)
               }
               className="px-8 py-3 bg-gradient-to-r from-[#F0B90B] to-[#E1A706] text-black rounded-lg hover:from-[#E1A706] hover:to-[#D4951E] transition-all duration-200 disabled:bg-[#848E9C] disabled:cursor-not-allowed font-medium shadow-lg"
             >

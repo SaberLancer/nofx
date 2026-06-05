@@ -97,6 +97,11 @@ export interface CreateTraderRequest {
   ai_model_id: string
   exchange_id: string
   strategy_id?: string // 策略ID（新版，使用保存的策略配置）
+  regime_switch_enabled?: boolean // 是否启用市场状态自动切换策略
+  trend_strategy_id?: string // 趋势市场绑定的策略（日内波段）
+  oscillation_strategy_id?: string // 震荡市场绑定的策略（高抛低吸）
+  regime_confirm_cycles?: number // 连续确认周期数后才切换
+  regime_detection?: import('./trading').RegimeDetectionConfig // 市场状态检测参数（第 4 步）
   scan_interval_minutes?: number
   is_cross_margin?: boolean
   show_in_competition?: boolean // 是否在竞技场显示

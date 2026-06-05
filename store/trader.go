@@ -25,6 +25,20 @@ type Trader struct {
 	AIModelID           string    `gorm:"column:ai_model_id;not null" json:"ai_model_id"`
 	ExchangeID          string    `gorm:"column:exchange_id;not null" json:"exchange_id"`
 	StrategyID          string    `gorm:"column:strategy_id;default:''" json:"strategy_id"`
+	// Regime-based auto strategy switching (trend ↔ oscillation)
+	RegimeSwitchEnabled     bool   `gorm:"column:regime_switch_enabled;default:false" json:"regime_switch_enabled"`
+	TrendStrategyID         string `gorm:"column:trend_strategy_id;default:''" json:"trend_strategy_id"`
+	OscillationStrategyID   string `gorm:"column:oscillation_strategy_id;default:''" json:"oscillation_strategy_id"`
+	RegimeConfirmCycles     int    `gorm:"column:regime_confirm_cycles;default:2" json:"regime_confirm_cycles"`
+	// Regime detection parameters (trader step 4 only — not strategy config)
+	RegimeDetectionTimeframe       string  `gorm:"column:regime_detection_timeframe;default:15m" json:"regime_detection_timeframe"`
+	RegimeDetectionKlineCount      int     `gorm:"column:regime_detection_kline_count;default:30" json:"regime_detection_kline_count"`
+	RegimeDetectionMaxADX          float64 `gorm:"column:regime_detection_max_adx;default:22" json:"regime_detection_max_adx"`
+	RegimeDetectionMaxRangePct     float64 `gorm:"column:regime_detection_max_range_pct;default:4.5" json:"regime_detection_max_range_pct"`
+	RegimeDetectionRangeLookback   int     `gorm:"column:regime_detection_range_lookback;default:14" json:"regime_detection_range_lookback"`
+	RegimeDetectionSwingLookback   int     `gorm:"column:regime_detection_swing_lookback;default:12" json:"regime_detection_swing_lookback"`
+	RegimeDetectionADXLagMax       float64 `gorm:"column:regime_detection_adx_lag_max;default:30" json:"regime_detection_adx_lag_max"`
+	RegimeDetectionJSON            string  `gorm:"column:regime_detection_json;type:text" json:"regime_detection_json,omitempty"`
 	InitialBalance      float64   `gorm:"column:initial_balance;not null" json:"initial_balance"`
 	ScanIntervalMinutes int       `gorm:"column:scan_interval_minutes;default:3" json:"scan_interval_minutes"`
 	IsRunning           bool      `gorm:"column:is_running;default:false" json:"is_running"`
@@ -110,12 +124,24 @@ func (s *TraderStore) Update(trader *Trader) error {
 		trader.ID, trader.Name, trader.AIModelID, trader.StrategyID)
 
 	updates := map[string]interface{}{
-		"name":                   trader.Name,
-		"ai_model_id":            trader.AIModelID,
-		"exchange_id":            trader.ExchangeID,
-		"strategy_id":            trader.StrategyID,
-		"is_cross_margin":        trader.IsCrossMargin,
-		"show_in_competition":    trader.ShowInCompetition,
+		"name":                     trader.Name,
+		"ai_model_id":              trader.AIModelID,
+		"exchange_id":              trader.ExchangeID,
+		"strategy_id":              trader.StrategyID,
+		"regime_switch_enabled":    trader.RegimeSwitchEnabled,
+		"trend_strategy_id":        trader.TrendStrategyID,
+		"oscillation_strategy_id":  trader.OscillationStrategyID,
+		"regime_confirm_cycles":              trader.RegimeConfirmCycles,
+		"regime_detection_timeframe":         trader.RegimeDetectionTimeframe,
+		"regime_detection_kline_count":         trader.RegimeDetectionKlineCount,
+		"regime_detection_max_adx":           trader.RegimeDetectionMaxADX,
+		"regime_detection_max_range_pct":     trader.RegimeDetectionMaxRangePct,
+		"regime_detection_range_lookback":    trader.RegimeDetectionRangeLookback,
+		"regime_detection_swing_lookback":    trader.RegimeDetectionSwingLookback,
+		"regime_detection_adx_lag_max":       trader.RegimeDetectionADXLagMax,
+		"regime_detection_json":              trader.RegimeDetectionJSON,
+		"is_cross_margin":                    trader.IsCrossMargin,
+		"show_in_competition":      trader.ShowInCompetition,
 		"btc_eth_leverage":       trader.BTCETHLeverage,
 		"altcoin_leverage":       trader.AltcoinLeverage,
 		"trading_symbols":        trader.TradingSymbols,
@@ -140,6 +166,13 @@ func (s *TraderStore) Update(trader *Trader) error {
 	return s.db.Model(&Trader{}).
 		Where("id = ? AND user_id = ?", trader.ID, trader.UserID).
 		Updates(updates).Error
+}
+
+// UpdateStrategyID updates only the bound strategy (used by regime auto-switch).
+func (s *TraderStore) UpdateStrategyID(userID, id, strategyID string) error {
+	return s.db.Model(&Trader{}).
+		Where("id = ? AND user_id = ?", id, userID).
+		Update("strategy_id", strategyID).Error
 }
 
 // UpdateInitialBalance updates initial balance

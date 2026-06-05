@@ -28,6 +28,19 @@ describe('executionLogDisplay zh', () => {
     ).toContain('等待 Tick 方向信号')
   })
 
+  it('translates regime detection inconclusive', () => {
+    const line =
+      'regime-detect: inconclusive symbol=ETHUSDT adx_1h=22.3 adx_15m=21.0 bbw_15m_pct=1.45 | 1H ADX=22.3 灰区(20-25)'
+    expect(translateExecutionLogLine(line, zh)).toContain('[市场状态检测] 未决 ETHUSDT')
+    expect(translateExecutionLogLine(line, zh)).toContain('1H ADX=22.3')
+  })
+
+  it('translates regime switch pending', () => {
+    const line =
+      'regime-switch: pending oscillation symbol=SOLUSDT confirm=1/2 target=震荡高抛低吸 adx_1h=18.2 adx_15m=19.5 | 15m ADX=19.5 偏震荡'
+    expect(translateExecutionLogLine(line, zh)).toContain('[市场状态切换] 待确认 震荡 SOLUSDT（1/2）')
+  })
+
   it('translates success log', () => {
     expect(translateExecutionLogLine('✓ BTCUSDT close_short succeeded', zh)).toBe(
       '✓ BTCUSDT 平空 执行成功'

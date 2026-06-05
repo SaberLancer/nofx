@@ -137,6 +137,90 @@ export interface CompetitionData {
   count: number
 }
 
+/** 【1H 层】大局 Bias */
+export interface RegimeLayer1H {
+  enabled: boolean
+  ema_fast: number
+  ema_slow: number
+  adx_period: number
+  adx_ranging_below: number
+  adx_trend_above: number
+  kline_count: number
+}
+
+/** 【15m 层】决策台 */
+export interface RegimeLayer15m {
+  enabled: boolean
+  ema_fast: number
+  ema_slow: number
+  adx_period: number
+  adx_ranging_below: number
+  adx_trend_above: number
+  rsi_period: number
+  bb_period: number
+  bbw_thin_below_pct: number
+  atr_period: number
+  volume_ma_period: number
+  max_range_pct: number
+  range_lookback: number
+  swing_lookback: number
+  kline_count: number
+}
+
+/** 【3m 层】扳机 / 止损参考 */
+export interface RegimeLayer3m {
+  enabled: boolean
+  atr_period: number
+  atr_sl_multiplier: number
+  use_structure_sl: boolean
+  structure_timeframe: string
+  kline_count: number
+}
+
+/** 交易员第 4 步：多周期市场状态检测（与策略配置无关） */
+export interface RegimeDetectionConfig {
+  layer_1h: RegimeLayer1H
+  layer_15m: RegimeLayer15m
+  layer_3m: RegimeLayer3m
+}
+
+export const DEFAULT_REGIME_DETECTION: RegimeDetectionConfig = {
+  layer_1h: {
+    enabled: true,
+    ema_fast: 20,
+    ema_slow: 50,
+    adx_period: 14,
+    adx_ranging_below: 20,
+    adx_trend_above: 25,
+    kline_count: 60,
+  },
+  layer_15m: {
+    enabled: true,
+    ema_fast: 20,
+    ema_slow: 50,
+    adx_period: 14,
+    adx_ranging_below: 22,
+    adx_trend_above: 25,
+    rsi_period: 14,
+    bb_period: 20,
+    bbw_thin_below_pct: 3,
+    atr_period: 14,
+    volume_ma_period: 20,
+    max_range_pct: 4.5,
+    range_lookback: 14,
+    swing_lookback: 12,
+    kline_count: 50,
+  },
+  layer_3m: {
+    enabled: true,
+    atr_period: 14,
+    atr_sl_multiplier: 1.5,
+    use_structure_sl: true,
+    structure_timeframe: '15m',
+    kline_count: 40,
+  },
+}
+
 // Trader Configuration Data for View Modal
 export interface TraderConfigData {
   trader_id?: string
@@ -145,6 +229,11 @@ export interface TraderConfigData {
   exchange_id: string
   strategy_id?: string  // 策略ID
   strategy_name?: string  // 策略名称
+  regime_switch_enabled?: boolean
+  trend_strategy_id?: string
+  oscillation_strategy_id?: string
+  regime_confirm_cycles?: number
+  regime_detection?: RegimeDetectionConfig
   is_cross_margin: boolean
   show_in_competition: boolean  // 是否在竞技场显示
   scan_interval_minutes: number

@@ -29,6 +29,12 @@ type CreateTraderRequest struct {
 	ScanIntervalMinutes int     `json:"scan_interval_minutes"`
 	IsCrossMargin       *bool   `json:"is_cross_margin"`     // Pointer type, nil means use default value true
 	ShowInCompetition   *bool   `json:"show_in_competition"` // Pointer type, nil means use default value true
+	// Regime-based auto strategy switching
+	RegimeSwitchEnabled   bool   `json:"regime_switch_enabled"`
+	TrendStrategyID       string `json:"trend_strategy_id"`
+	OscillationStrategyID string `json:"oscillation_strategy_id"`
+	RegimeConfirmCycles   int                         `json:"regime_confirm_cycles"`
+	RegimeDetection       store.RegimeDetectionConfig `json:"regime_detection"`
 	// The following fields are kept for backward compatibility, new version uses strategy config
 	BTCETHLeverage       int    `json:"btc_eth_leverage"`
 	AltcoinLeverage      int    `json:"altcoin_leverage"`
@@ -50,6 +56,11 @@ type UpdateTraderRequest struct {
 	ScanIntervalMinutes int     `json:"scan_interval_minutes"`
 	IsCrossMargin       *bool   `json:"is_cross_margin"`
 	ShowInCompetition   *bool   `json:"show_in_competition"`
+	RegimeSwitchEnabled   bool   `json:"regime_switch_enabled"`
+	TrendStrategyID       string `json:"trend_strategy_id"`
+	OscillationStrategyID string `json:"oscillation_strategy_id"`
+	RegimeConfirmCycles   int                         `json:"regime_confirm_cycles"`
+	RegimeDetection       store.RegimeDetectionConfig `json:"regime_detection"`
 	// The following fields are kept for backward compatibility, new version uses strategy config
 	BTCETHLeverage       int    `json:"btc_eth_leverage"`
 	AltcoinLeverage      int    `json:"altcoin_leverage"`
@@ -68,6 +79,31 @@ func formatTraderCreationError(reason, nextStep string) string {
 
 func traderCreationRequestError(reason string) string {
 	return formatTraderCreationError(reason, "请检查你刚刚填写的内容后，再重新提交")
+}
+
+func validateRegimeSwitchConfig(enabled bool, trendID, oscillationID string) (string, string) {
+	if !enabled {
+		return "", ""
+	}
+	if trendID == "" || oscillationID == "" {
+		return traderCreationRequestError("启用市场状态自动切换时，必须分别选择趋势策略和震荡策略"),
+			"trader.regime_switch.strategies_required"
+	}
+	if trendID == oscillationID {
+		return traderCreationRequestError("趋势策略与震荡策略不能是同一条策略"),
+			"trader.regime_switch.same_strategy"
+	}
+	return "", ""
+}
+
+func normalizeRegimeConfirmCycles(cycles int) int {
+	if cycles < 1 {
+		return 2
+	}
+	if cycles > 10 {
+		return 10
+	}
+	return cycles
 }
 
 func validateTraderLeverageRange(btcEthLeverage, altcoinLeverage int) (string, string) {
@@ -388,6 +424,24 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 		}
 	}
 
+	if errMsg, errCode := validateRegimeSwitchConfig(req.RegimeSwitchEnabled, req.TrendStrategyID, req.OscillationStrategyID); errMsg != "" {
+		SafeBadRequestWithDetails(c, errMsg, errCode, nil)
+		return
+	}
+	if req.RegimeSwitchEnabled {
+		for _, sid := range []string{req.TrendStrategyID, req.OscillationStrategyID} {
+			if _, err = s.store.Strategy().Get(userID, sid); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					SafeBadRequestWithDetails(c, formatTraderCreationError("自动切换所选的策略不存在或已被删除", "请重新选择趋势策略与震荡策略"), "trader.regime_switch.strategy_not_found", nil)
+					return
+				}
+				SafeError(c, http.StatusInternalServerError, formatTraderCreationError("暂时无法读取自动切换策略配置", "请稍后重试"), err)
+				return
+			}
+		}
+		req.StrategyID = req.TrendStrategyID
+	}
+
 	// Generate trader ID (use short UUID prefix for readability)
 	exchangeIDShort := req.ExchangeID
 	if len(exchangeIDShort) > 8 {
@@ -483,26 +537,31 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 	// Create trader configuration (database entity)
 	logger.Infof("🔧 DEBUG: Starting to create trader config, ID=%s, Name=%s, AIModel=%s, Exchange=%s, StrategyID=%s", traderID, req.Name, req.AIModelID, req.ExchangeID, req.StrategyID)
 	traderRecord := &store.Trader{
-		ID:                   traderID,
-		UserID:               userID,
-		Name:                 req.Name,
-		AIModelID:            req.AIModelID,
-		ExchangeID:           req.ExchangeID,
-		StrategyID:           req.StrategyID, // Associated strategy ID (new version)
-		InitialBalance:       actualBalance,  // Use actual queried balance
-		BTCETHLeverage:       btcEthLeverage,
-		AltcoinLeverage:      altcoinLeverage,
-		TradingSymbols:       req.TradingSymbols,
-		UseAI500:             req.UseAI500,
-		UseOITop:             req.UseOITop,
-		CustomPrompt:         req.CustomPrompt,
-		OverrideBasePrompt:   req.OverrideBasePrompt,
-		SystemPromptTemplate: systemPromptTemplate,
-		IsCrossMargin:        isCrossMargin,
-		ShowInCompetition:    showInCompetition,
-		ScanIntervalMinutes:  scanIntervalMinutes,
-		IsRunning:            false,
+		ID:                    traderID,
+		UserID:                userID,
+		Name:                  req.Name,
+		AIModelID:             req.AIModelID,
+		ExchangeID:            req.ExchangeID,
+		StrategyID:            req.StrategyID,
+		RegimeSwitchEnabled:   req.RegimeSwitchEnabled,
+		TrendStrategyID:       req.TrendStrategyID,
+		OscillationStrategyID: req.OscillationStrategyID,
+		RegimeConfirmCycles:   normalizeRegimeConfirmCycles(req.RegimeConfirmCycles),
+		InitialBalance:        actualBalance,
+		BTCETHLeverage:        btcEthLeverage,
+		AltcoinLeverage:       altcoinLeverage,
+		TradingSymbols:        req.TradingSymbols,
+		UseAI500:              req.UseAI500,
+		UseOITop:              req.UseOITop,
+		CustomPrompt:          req.CustomPrompt,
+		OverrideBasePrompt:    req.OverrideBasePrompt,
+		SystemPromptTemplate:  systemPromptTemplate,
+		IsCrossMargin:         isCrossMargin,
+		ShowInCompetition:     showInCompetition,
+		ScanIntervalMinutes:   scanIntervalMinutes,
+		IsRunning:             false,
 	}
+	traderRecord.ApplyRegimeDetection(req.RegimeDetection)
 
 	// Save to database
 	logger.Infof("🔧 DEBUG: Preparing to call CreateTrader")
@@ -633,6 +692,23 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		strategyID = existingTrader.StrategyID
 	}
 
+	if errMsg, errCode := validateRegimeSwitchConfig(req.RegimeSwitchEnabled, req.TrendStrategyID, req.OscillationStrategyID); errMsg != "" {
+		SafeBadRequestWithDetails(c, errMsg, errCode, nil)
+		return
+	}
+	if req.RegimeSwitchEnabled {
+		for _, sid := range []string{req.TrendStrategyID, req.OscillationStrategyID} {
+			if _, err = s.store.Strategy().Get(userID, sid); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					SafeBadRequestWithDetails(c, "自动切换所选的策略不存在或已被删除", "trader.regime_switch.strategy_not_found", nil)
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load regime switch strategy"})
+				return
+			}
+		}
+	}
+
 	exchangeChanged := req.ExchangeID != "" && req.ExchangeID != existingTrader.ExchangeID
 	resetInitialBalance := exchangeChanged && req.InitialBalance <= 0
 
@@ -646,24 +722,29 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 
 	// Update trader configuration
 	traderRecord := &store.Trader{
-		ID:                   traderID,
-		UserID:               userID,
-		Name:                 req.Name,
-		AIModelID:            req.AIModelID,
-		ExchangeID:           req.ExchangeID,
-		StrategyID:           strategyID, // Associated strategy ID
-		InitialBalance:       initialBalance,
-		BTCETHLeverage:       btcEthLeverage,
-		AltcoinLeverage:      altcoinLeverage,
-		TradingSymbols:       req.TradingSymbols,
-		CustomPrompt:         req.CustomPrompt,
-		OverrideBasePrompt:   req.OverrideBasePrompt,
-		SystemPromptTemplate: systemPromptTemplate,
-		IsCrossMargin:        isCrossMargin,
-		ShowInCompetition:    showInCompetition,
-		ScanIntervalMinutes:  scanIntervalMinutes,
-		IsRunning:            existingTrader.IsRunning, // Keep original value
+		ID:                    traderID,
+		UserID:                userID,
+		Name:                  req.Name,
+		AIModelID:             req.AIModelID,
+		ExchangeID:            req.ExchangeID,
+		StrategyID:            strategyID,
+		RegimeSwitchEnabled:   req.RegimeSwitchEnabled,
+		TrendStrategyID:       req.TrendStrategyID,
+		OscillationStrategyID: req.OscillationStrategyID,
+		RegimeConfirmCycles:   normalizeRegimeConfirmCycles(req.RegimeConfirmCycles),
+		InitialBalance:        initialBalance,
+		BTCETHLeverage:        btcEthLeverage,
+		AltcoinLeverage:       altcoinLeverage,
+		TradingSymbols:        req.TradingSymbols,
+		CustomPrompt:          req.CustomPrompt,
+		OverrideBasePrompt:    req.OverrideBasePrompt,
+		SystemPromptTemplate:  systemPromptTemplate,
+		IsCrossMargin:         isCrossMargin,
+		ShowInCompetition:     showInCompetition,
+		ScanIntervalMinutes:   scanIntervalMinutes,
+		IsRunning:             existingTrader.IsRunning,
 	}
+	traderRecord.ApplyRegimeDetection(req.RegimeDetection)
 
 	// Check if trader was running before update (we'll restart it after)
 	wasRunning := false

@@ -62,8 +62,16 @@ func (at *AutoTrader) runCycle() error {
 	// Reload strategy from DB when edited (hot update for running traders)
 	at.reloadStrategyConfigIfNeeded()
 
+	// Regime switch runs before building AI context so the correct strategy is used this cycle.
+	// Detection thresholds always come from trend_strategy_id, not the active strategy.
+	if at.maybeSwitchStrategyByRegime() {
+		at.reloadStrategyConfigIfNeeded()
+	}
+
 	// 4. Collect trading context (PnL rules run when positions are refreshed inside)
 	ctx, pnlActed, err := at.buildTradingContext(record)
+	// Regime detection logs appear after PnL check and before pre-decision in execution_log.
+	at.flushRegimeExecutionLog(record)
 	if err != nil {
 		at.logErrorf("failed to build trading context: %v", err)
 		record.Success = false

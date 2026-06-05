@@ -224,6 +224,15 @@ func ExportCalculateBOLL(klines []Kline, period int, multiplier float64) (upper,
 	return calculateBOLL(klines, period, multiplier)
 }
 
+// ExportBollingerBandWidthPct returns (upper-lower)/middle*100 for the last bar.
+func ExportBollingerBandWidthPct(klines []Kline, period int, multiplier float64) float64 {
+	upper, middle, lower := calculateBOLL(klines, period, multiplier)
+	if middle <= 0 {
+		return 0
+	}
+	return (upper - lower) / middle * 100
+}
+
 // ExportCalculateDonchian exports calculateDonchian for testing
 func ExportCalculateDonchian(klines []Kline, period int) (float64, float64) {
 	return calculateDonchian(klines, period)

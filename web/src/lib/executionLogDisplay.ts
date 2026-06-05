@@ -42,6 +42,52 @@ export function translateExecutionLogLine(line: string, language: Language): str
     return '前置决策：无候选币种'
   }
 
+  const regimeSkipped = s === 'regime-detect: skipped no_symbol'
+  if (regimeSkipped) {
+    return '[市场状态检测] 已跳过（无检测标的）'
+  }
+
+  const regimeInconclusive = s.match(
+    /^regime-detect: inconclusive symbol=(\S+) adx_1h=([\d.]+) adx_15m=([\d.]+) bbw_15m_pct=([\d.]+) \| (.+)$/
+  )
+  if (regimeInconclusive) {
+    return `[市场状态检测] 未决 ${regimeInconclusive[1]} | 1H ADX=${regimeInconclusive[2]} 15m ADX=${regimeInconclusive[3]} BBW=${regimeInconclusive[4]}% | ${regimeInconclusive[5]}`
+  }
+
+  const regimeVerdict = s.match(
+    /^regime-detect: verdict=(\w+) symbol=(\S+) adx_1h=([\d.]+) adx_15m=([\d.]+) strategy=(.+) \| (.+)$/
+  )
+  if (regimeVerdict) {
+    const verdictZh =
+      regimeVerdict[1] === 'oscillation' ? '震荡' : regimeVerdict[1] === 'trend' ? '趋势' : regimeVerdict[1]
+    return `[市场状态检测] 判定=${verdictZh} ${regimeVerdict[2]} | 1H ADX=${regimeVerdict[3]} 15m ADX=${regimeVerdict[4]} | 当前策略=${regimeVerdict[5]} | ${regimeVerdict[6]}`
+  }
+
+  const regimePending = s.match(
+    /^regime-switch: pending (\w+) symbol=(\S+) confirm=(\d+)\/(\d+) target=(.+) adx_1h=([\d.]+) adx_15m=([\d.]+) \| (.+)$/
+  )
+  if (regimePending) {
+    const verdictZh =
+      regimePending[1] === 'oscillation' ? '震荡' : regimePending[1] === 'trend' ? '趋势' : regimePending[1]
+    return `[市场状态切换] 待确认 ${verdictZh} ${regimePending[2]}（${regimePending[3]}/${regimePending[4]}）→ ${regimePending[5]} | 1H ADX=${regimePending[6]} 15m ADX=${regimePending[7]} | ${regimePending[8]}`
+  }
+
+  const regimeConfirmed = s.match(
+    /^regime-switch: confirmed (\w+) symbol=(\S+) switched_to=(.+) adx_1h=([\d.]+) adx_15m=([\d.]+) \| (.+)$/
+  )
+  if (regimeConfirmed) {
+    const verdictZh =
+      regimeConfirmed[1] === 'oscillation' ? '震荡' : regimeConfirmed[1] === 'trend' ? '趋势' : regimeConfirmed[1]
+    return `[市场状态切换] 已确认 ${verdictZh} ${regimeConfirmed[2]} → ${regimeConfirmed[3]} | 1H ADX=${regimeConfirmed[4]} 15m ADX=${regimeConfirmed[5]} | ${regimeConfirmed[6]}`
+  }
+
+  const regimeFailed = s.match(/^regime-switch: failed (\w+) symbol=(\S+) target=(.+?) error=(.+)$/)
+  if (regimeFailed) {
+    const verdictZh =
+      regimeFailed[1] === 'oscillation' ? '震荡' : regimeFailed[1] === 'trend' ? '趋势' : regimeFailed[1]
+    return `[市场状态切换] 失败 ${verdictZh} ${regimeFailed[2]} → ${regimeFailed[3]}：${regimeFailed[4]}`
+  }
+
   const waitTrend = s.match(/^pre-decision: waiting tick trend \((.+)\)$/)
   if (waitTrend) {
     return `前置决策：等待 Tick 方向信号（${waitTrend[1]}）`

@@ -22,6 +22,13 @@ func (at *AutoTrader) reloadStrategyConfigIfNeeded() {
 			at.logWarnf("⚠️ Strategy hot-reload skipped: trader user mismatch")
 			return
 		}
+		at.applyRegimeSwitchConfig(
+			traderRec.RegimeSwitchEnabled,
+			traderRec.TrendStrategyID,
+			traderRec.OscillationStrategyID,
+			traderRec.RegimeConfirmCycles,
+			traderRec.RegimeDetection(),
+		)
 		if traderRec.StrategyID != "" && traderRec.StrategyID != strategyID {
 			at.logInfof("📎 Strategy binding changed: %s → %s", strategyID, traderRec.StrategyID)
 			strategyID = traderRec.StrategyID

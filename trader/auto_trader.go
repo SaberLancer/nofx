@@ -147,6 +147,13 @@ type AutoTraderConfig struct {
 	StrategyID        string
 	StrategyName      string
 	StrategyUpdatedAt time.Time
+
+	// Regime-based auto strategy switching
+	RegimeSwitchEnabled     bool
+	TrendStrategyID         string
+	OscillationStrategyID   string
+	RegimeConfirmCycles     int
+	RegimeDetection         store.RegimeDetectionConfig
 }
 
 // AutoTrader automatic trader
@@ -197,6 +204,7 @@ type AutoTrader struct {
 	preDecisionTracker    *market.TickTrendTracker
 	unprotectedMu         sync.RWMutex
 	unprotectedPositions  map[string]unprotectedPosition // symbol_side -> missing SL/TP
+	regimeSwitch          regimeSwitchFields
 }
 
 // NewAutoTrader creates an automatic trader
@@ -389,7 +397,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 	strategyEngine := kernel.NewStrategyEngine(config.StrategyConfig, claw402Key)
 	logger.Infof("✓ [%s] Using strategy engine (strategy configuration loaded)", config.Name)
 
-	return &AutoTrader{
+	at := &AutoTrader{
 		id:                    config.ID,
 		name:                  config.Name,
 		aiModel:               config.AIModel,
@@ -418,7 +426,15 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		peakPnLCacheMutex:     sync.RWMutex{},
 		lastBalanceSyncTime:   time.Now(),
 		userID:                userID,
-	}, nil
+	}
+	at.applyRegimeSwitchConfig(
+		config.RegimeSwitchEnabled,
+		config.TrendStrategyID,
+		config.OscillationStrategyID,
+		config.RegimeConfirmCycles,
+		config.RegimeDetection,
+	)
+	return at, nil
 }
 
 // Run runs the automatic trading main loop
