@@ -1,4 +1,4 @@
-import { Shield, AlertTriangle } from 'lucide-react'
+import { Shield, AlertTriangle, Activity } from 'lucide-react'
 import type { RiskControlConfig } from '../../types'
 import { riskControl, ts } from '../../i18n/strategy-translations'
 import { effectiveMaxPositions } from '../../utils/strategyCoinCount'
@@ -230,7 +230,7 @@ export function RiskControlEditor({
                 className="w-12 text-center font-mono"
                 style={{ color: '#0ECB81' }}
               >
-                {config.altcoin_max_position_value_ratio ?? 1}x
+                {config.altcoin_max_position_value_ratio ?? 5}x
               </span>
               <span className="text-xs" style={{ color: '#848E9C' }}>
                 {ts(riskControl.systemEnforcedBadge, language)}
@@ -511,6 +511,102 @@ export function RiskControlEditor({
             suffix="pp"
           />
         </div>
+      </div>
+
+      {/* Oscillation gate */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Activity className="w-5 h-5" style={{ color: '#F0B90B' }} />
+          <h3 className="font-medium" style={{ color: '#EAECEF' }}>
+            {ts(riskControl.oscillationGate, language)}
+          </h3>
+          <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#0ECB8120', color: '#0ECB81' }}>
+            {ts(riskControl.systemEnforcedBadge, language)}
+          </span>
+        </div>
+        <p className="text-xs mb-4" style={{ color: '#848E9C' }}>
+          {ts(riskControl.oscillationGateDesc, language)}
+        </p>
+
+        <div
+          className="p-4 rounded-lg mb-4"
+          style={{ background: '#0B0E11', border: '1px solid #F0B90B40' }}
+        >
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={config.oscillation_gate_enabled !== false}
+              onChange={(e) => updateField('oscillation_gate_enabled', e.target.checked)}
+              disabled={disabled}
+              className="accent-yellow-500"
+            />
+            <span className="text-sm" style={{ color: '#EAECEF' }}>
+              {ts(riskControl.oscillationGateEnabled, language)}
+            </span>
+          </label>
+          <p className="text-xs mt-2" style={{ color: '#848E9C' }}>
+            {ts(riskControl.oscillationGateEnabledDesc, language)}
+          </p>
+        </div>
+
+        {config.oscillation_gate_enabled !== false && (
+          <div className="grid grid-cols-2 gap-4">
+            <NumberField
+              label={ts(riskControl.oscillationMaxAdx, language)}
+              desc={ts(riskControl.oscillationMaxAdxDesc, language)}
+              value={config.oscillation_max_adx ?? 22}
+              onChange={(v) => updateField('oscillation_max_adx', v)}
+              disabled={disabled}
+              min={5}
+              max={50}
+              step={0.5}
+            />
+            <NumberField
+              label={ts(riskControl.oscillationMaxRangePct, language)}
+              desc={ts(riskControl.oscillationMaxRangePctDesc, language)}
+              value={config.oscillation_max_range_pct ?? 4.5}
+              onChange={(v) => updateField('oscillation_max_range_pct', v)}
+              disabled={disabled}
+              min={1}
+              max={20}
+              step={0.5}
+              suffix="%"
+            />
+            <NumberField
+              label={ts(riskControl.oscillationRangeLookback, language)}
+              desc={ts(riskControl.oscillationRangeLookbackDesc, language)}
+              value={config.oscillation_range_lookback ?? 14}
+              onChange={(v) => updateField('oscillation_range_lookback', Math.round(v))}
+              disabled={disabled}
+              min={6}
+              max={50}
+              step={1}
+            />
+            <NumberField
+              label={ts(riskControl.oscillationSwingLookback, language)}
+              desc={ts(riskControl.oscillationSwingLookbackDesc, language)}
+              value={config.oscillation_swing_lookback ?? 12}
+              onChange={(v) => updateField('oscillation_swing_lookback', Math.round(v))}
+              disabled={disabled}
+              min={6}
+              max={40}
+              step={1}
+            />
+            <NumberField
+              label={ts(riskControl.oscillationAdxLagMax, language)}
+              desc={ts(riskControl.oscillationAdxLagMaxDesc, language)}
+              value={config.oscillation_adx_lag_max ?? 30}
+              onChange={(v) => updateField('oscillation_adx_lag_max', v)}
+              disabled={disabled}
+              min={15}
+              max={60}
+              step={0.5}
+            />
+          </div>
+        )}
+        <p className="text-[10px] mt-3" style={{ color: '#5E6673' }}>
+          {ts(riskControl.oscillationSystemEnforced, language)}
+        </p>
       </div>
 
       {/* Entry Requirements */}

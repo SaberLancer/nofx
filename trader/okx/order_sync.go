@@ -303,17 +303,8 @@ func (t *OKXTrader) syncClosedPositions(traderID, exchangeID, exchangeType strin
 		return err
 	}
 
-	var start time.Time
-	if closedCount == 0 {
-		// First import: fetch latest N closes without time filter.
-		start = time.Time{}
-	} else {
-		lastExitMs, err := posStore.GetLastClosedPositionTime(traderID)
-		if err != nil {
-			return err
-		}
-		start = time.UnixMilli(lastExitMs).UTC().Add(-2 * time.Hour)
-	}
+	// Always look back 7 days — local lastExit can lag or be wrong vs OKX positions-history.
+	start := time.Now().UTC().Add(-7 * 24 * time.Hour)
 
 	records, err := t.GetClosedPnL(start, 100)
 	if err != nil {

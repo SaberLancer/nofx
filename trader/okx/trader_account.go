@@ -153,11 +153,11 @@ func (t *OKXTrader) GetMarketPrice(symbol string) (float64, error) {
 // GetClosedPnL retrieves closed position PnL records from OKX positions-history API.
 // OKX API: /api/v5/account/positions-history
 func (t *OKXTrader) GetClosedPnL(startTime time.Time, limit int) ([]types.ClosedPnLRecord, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 500 {
-		limit = 500
+	// limit <= 0: fetch every row in the lookback window (matches OKX App list).
+	unlimited := limit <= 0
+	maxRecords := limit
+	if !unlimited && maxRecords > 500 {
+		maxRecords = 500
 	}
 
 	var (
@@ -165,13 +165,19 @@ func (t *OKXTrader) GetClosedPnL(startTime time.Time, limit int) ([]types.Closed
 		afterUTime string
 	)
 
-	for len(records) < limit {
+	for {
 		pageLimit := 100
-		if remaining := limit - len(records); remaining < pageLimit {
-			pageLimit = remaining
+		if !unlimited {
+			remaining := maxRecords - len(records)
+			if remaining <= 0 {
+				break
+			}
+			if remaining < pageLimit {
+				pageLimit = remaining
+			}
 		}
 
-		rows, err := t.fetchPositionsHistoryPage(startTime, pageLimit, afterUTime)
+		rows, err := t.fetchPositionsHistoryPage(pageLimit, afterUTime)
 		if err != nil {
 			return records, err
 		}
@@ -179,23 +185,28 @@ func (t *OKXTrader) GetClosedPnL(startTime time.Time, limit int) ([]types.Closed
 			break
 		}
 
-		reachedWindowStart := false
+		if !startTime.IsZero() && positionsHistoryPageBeforeWindow(rows, startTime) {
+			break
+		}
+
 		for _, row := range rows {
 			record, ok := t.okxPositionHistoryRowToRecord(row)
 			if !ok {
 				continue
 			}
 			if !startTime.IsZero() && record.ExitTime.Before(startTime) {
-				reachedWindowStart = true
 				continue
 			}
 			records = append(records, record)
-			if len(records) >= limit {
+			if !unlimited && len(records) >= maxRecords {
 				break
 			}
 		}
 
-		if len(records) >= limit || reachedWindowStart || len(rows) < pageLimit {
+		if !unlimited && len(records) >= maxRecords {
+			break
+		}
+		if len(rows) < pageLimit {
 			break
 		}
 
@@ -205,11 +216,25 @@ func (t *OKXTrader) GetClosedPnL(startTime time.Time, limit int) ([]types.Closed
 		}
 	}
 
-	return records, nil
+	return types.DedupeClosedPnLRecords(records), nil
 }
 
-func (t *OKXTrader) fetchPositionsHistoryPage(startTime time.Time, limit int, afterUTime string) ([]okxPositionHistoryRow, error) {
-	path := buildOKXPositionsHistoryPath(startTime, limit, afterUTime)
+func positionsHistoryPageBeforeWindow(rows []okxPositionHistoryRow, startTime time.Time) bool {
+	startMs := startTime.UnixMilli()
+	for _, row := range rows {
+		uTime, err := strconv.ParseInt(row.UTime, 10, 64)
+		if err != nil || uTime <= 0 {
+			continue
+		}
+		if uTime >= startMs {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *OKXTrader) fetchPositionsHistoryPage(limit int, afterUTime string) ([]okxPositionHistoryRow, error) {
+	path := buildOKXPositionsHistoryPath(limit, afterUTime)
 	data, err := t.doRequest("GET", path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get positions history: %w", err)
@@ -233,7 +258,7 @@ func (t *OKXTrader) okxPositionHistoryRowToRecord(pos okxPositionHistoryRow) (ty
 	record.Symbol = market.Normalize(record.Symbol)
 
 	record.Side = pos.PosSide
-	if record.Side == "" {
+	if record.Side == "" || strings.EqualFold(record.Side, "net") {
 		record.Side = pos.Direction
 	}
 
@@ -325,7 +350,7 @@ type okxPositionHistoryRow struct {
 	PosId         string `json:"posId"`
 }
 
-func buildOKXPositionsHistoryPath(startTime time.Time, limit int, afterUTime string) string {
+func buildOKXPositionsHistoryPath(limit int, afterUTime string) string {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -334,11 +359,10 @@ func buildOKXPositionsHistoryPath(startTime time.Time, limit int, afterUTime str
 	}
 	path := fmt.Sprintf("/api/v5/account/positions-history?instType=SWAP&limit=%d", limit)
 	if afterUTime != "" {
+		// Pages after the first: records earlier than afterUTime.
 		path += "&after=" + afterUTime
-	} else if !startTime.IsZero() {
-		// First page: records with uTime newer than startTime (forward sync / lookback window).
-		path += fmt.Sprintf("&before=%d", startTime.UnixMilli())
 	}
+	// First page has no before/after so we always get the latest closes (filter by startTime in code).
 	return path
 }
 

@@ -142,10 +142,11 @@ export const dataApi = {
   async getPositionHistory(
     traderId: string,
     limit: number = 100,
-    silent?: boolean
+    silent?: boolean,
+    days: number = 90
   ): Promise<PositionHistoryResponse> {
     const result = await httpClient.request<PositionHistoryResponse>(
-      `${API_BASE}/positions/history?trader_id=${traderId}&limit=${limit}`,
+      `${API_BASE}/positions/history?trader_id=${traderId}&limit=${limit}&days=${days}`,
       { silent }
     )
     if (!result.success) throw new Error('Failed to fetch position history')

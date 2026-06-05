@@ -366,8 +366,8 @@ func normalizePositionSide(side string) string {
 
 // SyncOpenPositionPeakPnLPct updates peak margin PnL% on the matched OPEN row when current exceeds stored peak.
 // When exchangePositionID is present, only that row is updated (never a stale symbol+side ghost row).
-// Returns the authoritative peak (max of stored and current). No anomaly filtering.
-func (s *PositionStore) SyncOpenPositionPeakPnLPct(traderID, exchangeID, exchangePositionID, symbol, side string, currentPnLPct float64) (float64, error) {
+// Returns the authoritative peak (max of sanitized stored and current). maxAbs/maxJump sanitize dirty peaks.
+func (s *PositionStore) SyncOpenPositionPeakPnLPct(traderID, exchangeID, exchangePositionID, symbol, side string, currentPnLPct, maxAbs, maxJump float64) (float64, error) {
 	pos, err := s.resolveOpenPositionForPeak(traderID, exchangeID, exchangePositionID, symbol, side)
 	if err != nil {
 		return 0, err
@@ -376,7 +376,17 @@ func (s *PositionStore) SyncOpenPositionPeakPnLPct(traderID, exchangeID, exchang
 		return currentPnLPct, nil
 	}
 
-	peak := pos.PeakPnLPct
+	peak := SanitizePeakPnLPct(pos.PeakPnLPct, currentPnLPct, maxAbs, maxJump)
+	if peak != pos.PeakPnLPct && peak < pos.PeakPnLPct {
+		now := time.Now().UTC().UnixMilli()
+		if err := s.db.Model(&TraderPosition{}).Where("id = ?", pos.ID).Updates(map[string]interface{}{
+			"peak_pnl_pct": peak,
+			"updated_at":   now,
+		}).Error; err != nil {
+			return peak, fmt.Errorf("failed to sanitize peak_pnl_pct: %w", err)
+		}
+	}
+
 	if currentPnLPct > peak {
 		now := time.Now().UTC().UnixMilli()
 		if err := s.db.Model(&TraderPosition{}).Where("id = ?", pos.ID).Updates(map[string]interface{}{

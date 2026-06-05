@@ -50,6 +50,8 @@ interface BacktestConfigFormProps {
   isStarting: boolean
   aiModels: AIModel[] | undefined
   strategies: Strategy[] | undefined
+  /** Resolved from enabled OKX exchange (demo vs live) */
+  klineSourceLabel?: string
   language: string
   tr: (key: string, params?: Record<string, string | number>) => string
   onFormChange: (key: string, value: string | number | boolean | string[]) => void
@@ -63,6 +65,7 @@ export function BacktestConfigForm({
   isStarting,
   aiModels,
   strategies,
+  klineSourceLabel,
   language,
   tr,
   onFormChange,
@@ -568,6 +571,15 @@ export function BacktestConfigForm({
                   </span>
                 </label>
               </div>
+
+              {klineSourceLabel ? (
+                <p
+                  className="text-xs px-3 py-2 rounded-lg"
+                  style={{ background: 'rgba(240,185,11,0.08)', border: '1px solid #F0B90B40', color: '#F0B90B' }}
+                >
+                  {globalT('backtestConfigForm.klineSource', lang)}: {klineSourceLabel}
+                </p>
+              ) : null}
 
               <div className="flex gap-2">
                 <button

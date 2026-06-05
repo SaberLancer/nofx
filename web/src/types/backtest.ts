@@ -152,6 +152,9 @@ export interface BacktestStartConfig {
     btc_eth_leverage?: number;
     altcoin_leverage?: number;
   };
+  /** Historical kline source; auto-filled from enabled OKX account when omitted */
+  kline_exchange?: string;
+  kline_simulated?: boolean;
 }
 
 export interface BacktestSavedConfig extends BacktestStartConfig {

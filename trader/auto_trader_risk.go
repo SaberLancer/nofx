@@ -54,38 +54,50 @@ func (at *AutoTrader) loadPeakPnLFromStore() {
 	}
 	at.peakPnLCacheMutex.Lock()
 	defer at.peakPnLCacheMutex.Unlock()
+	rc := at.riskControlConfig()
+	maxAbs := rc.EffectivePeakMaxAbsolutePct()
+	maxJump := rc.EffectivePeakMaxJumpPts()
 	for _, pos := range positions {
 		if pos == nil || pos.PeakPnLPct == 0 {
 			continue
 		}
+		peak := store.SanitizePeakPnLPct(pos.PeakPnLPct, 0, maxAbs, maxJump)
+		if peak <= 0 {
+			continue
+		}
 		key := store.PeakCacheKey(pos.ExchangePositionID, pos.Symbol, pos.Side)
-		if pos.PeakPnLPct > at.peakPnLCache[key] {
-			at.peakPnLCache[key] = pos.PeakPnLPct
+		if peak > at.peakPnLCache[key] {
+			at.peakPnLCache[key] = peak
 		}
 	}
 }
 
-// UpdatePeakPnL updates peak profit on every PnL sample (no spike filtering). Persists to DB; cleared only on full close.
+// UpdatePeakPnL updates peak profit on every PnL sample. Persists to DB; cleared only on full close.
+// Stored peaks are sanitized to reject ghost-row spikes before peak-pullback rules apply.
 func (at *AutoTrader) UpdatePeakPnL(exchangePositionID, symbol, side string, currentPnLPct float64) {
 	posKey := store.PeakCacheKey(exchangePositionID, symbol, side)
+	rc := at.riskControlConfig()
+	maxAbs := rc.EffectivePeakMaxAbsolutePct()
+	maxJump := rc.EffectivePeakMaxJumpPts()
 
 	at.peakPnLCacheMutex.Lock()
 	defer at.peakPnLCacheMutex.Unlock()
 
-	peak := at.peakPnLCache[posKey]
+	peak := store.SanitizePeakPnLPct(at.peakPnLCache[posKey], currentPnLPct, maxAbs, maxJump)
 	if currentPnLPct > peak {
 		peak = currentPnLPct
 	}
 
 	if at.store != nil {
 		storedPeak, err := at.store.Position().SyncOpenPositionPeakPnLPct(
-			at.id, at.exchangeID, exchangePositionID, symbol, side, currentPnLPct)
+			at.id, at.exchangeID, exchangePositionID, symbol, side, currentPnLPct, maxAbs, maxJump)
 		if err != nil {
 			at.logWarnf("⚠️ Failed to persist peak PnL for %s %s: %v", symbol, side, err)
-		} else if storedPeak > peak {
-			// Trust DB peak only when it is tied to the same identity (official posId path or
-			// already-bound row). SyncOpenPositionPeakPnLPct never reads ghost symbol+side rows.
-			peak = storedPeak
+		} else {
+			storedPeak = store.SanitizePeakPnLPct(storedPeak, currentPnLPct, maxAbs, maxJump)
+			if storedPeak > peak {
+				peak = storedPeak
+			}
 		}
 	}
 
@@ -147,7 +159,7 @@ func (at *AutoTrader) enforcePositionValueRatio(positionSizeUSD float64, equity 
 	} else {
 		maxPositionValueRatio = riskControl.AltcoinMaxPositionValueRatio
 		if maxPositionValueRatio <= 0 {
-			maxPositionValueRatio = 1.0 // Default: 1x for altcoins
+			maxPositionValueRatio = store.DefaultAltcoinMaxPositionValueRatio
 		}
 	}
 

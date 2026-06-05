@@ -10,36 +10,37 @@ import (
 	"nofx/store"
 )
 
-func TestTickConflictsWithOpen_LongVsHeavySell(t *testing.T) {
+func TestTickConflictLevel_LongVsHeavySell_Block(t *testing.T) {
 	cfg := store.PreDecisionConfig{Enabled: true, MinSellPressure: 0.55, MinBuyPressure: 0.55}
+	cfg.Normalize()
 	signal := market.TrendSignal{
-		Symbol:       "SOLUSDT",
 		Direction:    market.TrendShort,
 		BuyPressure:  0.051,
 		SellPressure: 0.949,
 		MomentumPct:  -0.04,
 	}
-	conflict, reason := tickConflictsWithOpen("open_long", signal, cfg)
-	if !conflict {
-		t.Fatalf("expected conflict for open_long vs heavy sell, reason=%q", reason)
+	level, _ := evaluateTickConflict("open_long", signal, cfg)
+	if level != tickConflictBlock {
+		t.Fatalf("expected block, got %v", level)
 	}
 }
 
-func TestTickConflictsWithOpen_ShortVsHeavyBuy(t *testing.T) {
-	cfg := store.PreDecisionConfig{Enabled: true, MinBuyPressure: 0.55, MinSellPressure: 0.55}
+func TestTickConflictLevel_LongVsMildSell_Reduce(t *testing.T) {
+	cfg := store.PreDecisionConfig{Enabled: true, MinSellPressure: 0.55, MinBuyPressure: 0.55}
+	cfg.Normalize()
 	signal := market.TrendSignal{
-		Direction:    market.TrendLong,
-		BuyPressure:  0.82,
-		SellPressure: 0.18,
-		MomentumPct:  0.05,
+		Direction:    market.TrendNone,
+		BuyPressure:  0.42,
+		SellPressure: 0.60,
+		MomentumPct:  -0.01,
 	}
-	conflict, _ := tickConflictsWithOpen("open_short", signal, cfg)
-	if !conflict {
-		t.Fatal("expected conflict for open_short vs heavy buy")
+	level, _ := evaluateTickConflict("open_long", signal, cfg)
+	if level != tickConflictReduce {
+		t.Fatalf("expected reduce, got %v", level)
 	}
 }
 
-func TestSanitizeOpenDecisionsAgainstTick_Downgrades(t *testing.T) {
+func TestSanitizeOpenDecisionsGate_TickBlock(t *testing.T) {
 	tracker := market.NewTickTrendTracker(market.PreDecisionSettings{
 		WindowSec: 60, MinTicks: 3, MinBuyPressure: 0.55, MinSellPressure: 0.55, MinMomentumPct: 0.02,
 	})
@@ -50,11 +51,13 @@ func TestSanitizeOpenDecisionsAgainstTick_Downgrades(t *testing.T) {
 		{Symbol: "SOLUSDT", Price: 71.8, Quantity: 3, Side: market.TickSideSell, Timestamp: now},
 	}, now)
 
+	disabled := false
 	at := &AutoTrader{
 		preDecisionTracker: tracker,
 		config: AutoTraderConfig{
 			StrategyConfig: &store.StrategyConfig{
 				PreDecision: store.PreDecisionConfig{Enabled: true},
+				RiskControl: store.RiskControlConfig{OscillationGateEnabled: &disabled},
 			},
 		},
 	}
@@ -64,7 +67,7 @@ func TestSanitizeOpenDecisionsAgainstTick_Downgrades(t *testing.T) {
 		Leverage:        5,
 		PositionSizeUSD: 1000,
 	}}
-	notes := at.sanitizeOpenDecisionsAgainstTick(decisions)
+	notes := at.sanitizeOpenDecisionsGate(&kernel.Context{}, decisions)
 	if len(notes) == 0 {
 		t.Fatal("expected downgrade note")
 	}
@@ -76,23 +79,53 @@ func TestSanitizeOpenDecisionsAgainstTick_Downgrades(t *testing.T) {
 	}
 }
 
-func TestInterpretCloseOrderResult_CodeEnforcedNO_POSITION(t *testing.T) {
-	order := map[string]interface{}{
-		"status":  "NO_POSITION",
-		"message": "No short position found for SOLUSDT on OKX",
+func TestSanitizeOpenDecisionsGate_OscillationBlock(t *testing.T) {
+	klines := makeOscTestKlines(60, 100)
+	bars := make([]market.KlineBar, len(klines))
+	for i, k := range klines {
+		bars[i] = market.KlineBar{Time: k.OpenTime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close}
 	}
-	err := interpretCloseOrderResult(order, nil, true)
-	if err == nil {
-		t.Fatal("expected error for code-enforced NO_POSITION")
+	ctx := &kernel.Context{
+		MarketDataMap: map[string]*market.Data{
+			"SOLUSDT": {
+				TimeframeData: map[string]*market.TimeframeSeriesData{
+					"15m": {Timeframe: "15m", Klines: bars},
+				},
+			},
+		},
 	}
-	if !strings.Contains(err.Error(), "forced close mismatch") {
-		t.Fatalf("unexpected error: %v", err)
+	at := &AutoTrader{
+		config: AutoTraderConfig{
+			StrategyConfig: &store.StrategyConfig{
+				Indicators: store.IndicatorConfig{
+					Klines: store.KlineConfig{PrimaryTimeframe: "15m"},
+				},
+				PreDecision: store.PreDecisionConfig{Enabled: false},
+			},
+		},
+	}
+	decisions := []kernel.Decision{{Symbol: "SOLUSDT", Action: "open_short", PositionSizeUSD: 500}}
+	notes := at.sanitizeOpenDecisionsGate(ctx, decisions)
+	if len(notes) == 0 {
+		t.Fatal("expected oscillation gate note")
+	}
+	if decisions[0].Action != "wait" {
+		t.Fatalf("expected wait, got %s", decisions[0].Action)
 	}
 }
 
-func TestInterpretCloseOrderResult_AINoPositionOK(t *testing.T) {
-	order := map[string]interface{}{"status": "NO_POSITION"}
-	if err := interpretCloseOrderResult(order, nil, false); err != nil {
-		t.Fatalf("AI close should tolerate NO_POSITION, got %v", err)
+func makeOscTestKlines(n int, base float64) []market.Kline {
+	out := make([]market.Kline, n)
+	for i := range out {
+		wave := float64(i%4) * 0.15
+		price := base + wave
+		out[i] = market.Kline{
+			OpenTime: int64(i),
+			Open:     price,
+			High:     price + 0.2,
+			Low:      price - 0.2,
+			Close:    price + 0.05,
+		}
 	}
+	return out
 }

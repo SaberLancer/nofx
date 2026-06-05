@@ -241,8 +241,8 @@ func (at *AutoTrader) runCycle() error {
 	}
 
 	if aiDecision != nil {
-		if tickNotes := at.sanitizeOpenDecisionsAgainstTick(aiDecision.Decisions); len(tickNotes) > 0 {
-			for _, note := range tickNotes {
+		if gateNotes := at.sanitizeOpenDecisionsGate(ctx, aiDecision.Decisions); len(gateNotes) > 0 {
+			for _, note := range gateNotes {
 				record.ExecutionLog = append(record.ExecutionLog, "⚠️ "+note)
 			}
 		}

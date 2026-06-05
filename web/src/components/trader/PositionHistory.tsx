@@ -749,7 +749,24 @@ export function PositionHistory({ traderId, openPositionCount, openPositionsKey 
   const [sortBy, setSortBy] = useState<'time' | 'pnl' | 'pnl_pct'>('time')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  const historyFetchLimit = Math.max(200, pageSize * 5)
+  const historyFetchDays = useMemo(() => {
+    switch (filterTimePreset) {
+      case '7d':
+        return 7
+      case '30d':
+        return 30
+      case '90d':
+        return 90
+      case 'custom':
+        return 365
+      default:
+        return 365
+    }
+  }, [filterTimePreset])
+
+  const historySWRKey = traderId
+    ? [positionHistorySWRKey(traderId), historyFetchDays] as const
+    : null
 
   const {
     data: historyData,
@@ -757,8 +774,8 @@ export function PositionHistory({ traderId, openPositionCount, openPositionsKey 
     isLoading,
     mutate: refreshHistory,
   } = useSWR(
-    traderId ? [positionHistorySWRKey(traderId), historyFetchLimit] : null,
-    ([, limit]) => api.getPositionHistory(traderId, limit as number, true),
+    historySWRKey,
+    ([, days]) => api.getPositionHistory(traderId, 500, true, days as number),
     {
       refreshInterval: 5000,
       revalidateOnFocus: true,

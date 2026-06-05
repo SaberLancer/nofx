@@ -55,8 +55,25 @@ type BacktestConfig struct {
 	CheckpointIntervalSeconds int    `json:"checkpoint_interval_seconds,omitempty"`
 	ReplayDecisionDir         string `json:"replay_decision_dir,omitempty"`
 
+	// Kline source for historical data (aligns with live OKX demo vs live when unset)
+	KlineExchange   string `json:"kline_exchange,omitempty"`   // okx | binance
+	KlineSimulated  bool   `json:"kline_simulated,omitempty"`  // OKX x-simulated-trading: 1
+
 	// Internal: loaded strategy config (set by Manager when StrategyID is provided)
 	loadedStrategy *store.StrategyConfig `json:"-"`
+}
+
+// MarketKlineOptions returns market.KlineRangeOptions for this backtest run.
+func (cfg *BacktestConfig) MarketKlineOptions() market.KlineRangeOptions {
+	ex := strings.TrimSpace(cfg.KlineExchange)
+	if ex == "" {
+		// Legacy runs (pre-kline sync) used Binance historical API.
+		ex = "binance"
+	}
+	return market.KlineRangeOptions{
+		Exchange:  market.NormalizeKlineExchange(ex),
+		Simulated: cfg.KlineSimulated,
+	}
 }
 
 // Validate performs validity checks on the configuration and fills in default values.
@@ -275,7 +292,7 @@ func (cfg *BacktestConfig) ToStrategyConfig() *store.StrategyConfig {
 			BTCETHMaxLeverage:            cfg.Leverage.BTCETHLeverage,
 			AltcoinMaxLeverage:           cfg.Leverage.AltcoinLeverage,
 			BTCETHMaxPositionValueRatio:  5.0,
-			AltcoinMaxPositionValueRatio: 1.0,
+			AltcoinMaxPositionValueRatio: 5.0,
 			MaxMarginUsage:               0.9,
 			MinPositionSize:              12,
 			MinRiskRewardRatio:           3.0,

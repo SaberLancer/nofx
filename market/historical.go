@@ -13,8 +13,8 @@ const (
 	binanceMaxKlineLimit    = 1500
 )
 
-// GetKlinesRange fetches K-line series within specified time range (closed interval), returns data sorted by time in ascending order.
-func GetKlinesRange(symbol string, timeframe string, start, end time.Time) ([]Kline, error) {
+// getKlinesRangeBinance fetches K-line series from Binance USDT-M futures (public live market data).
+func getKlinesRangeBinance(symbol string, timeframe string, start, end time.Time) ([]Kline, error) {
 	symbol = Normalize(symbol)
 	normTF, err := NormalizeTimeframe(timeframe)
 	if err != nil {

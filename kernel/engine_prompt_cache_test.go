@@ -13,7 +13,7 @@ func TestBuildSystemPrompt_StableAcrossEquity(t *testing.T) {
 			MaxPositions:                 3,
 			MinPositionSize:              10,
 			BTCETHMaxPositionValueRatio:  5,
-			AltcoinMaxPositionValueRatio: 1,
+			AltcoinMaxPositionValueRatio: 5,
 			MinConfidence:                70,
 		},
 		Indicators: store.IndicatorConfig{
@@ -36,7 +36,7 @@ func TestBuildUserPrompt_IncludesSessionLimits(t *testing.T) {
 		config: &store.StrategyConfig{
 			RiskControl: store.RiskControlConfig{
 				BTCETHMaxPositionValueRatio:  5,
-				AltcoinMaxPositionValueRatio: 1,
+				AltcoinMaxPositionValueRatio: 5,
 			},
 			Indicators: store.IndicatorConfig{
 				Klines: store.KlineConfig{PrimaryTimeframe: "3m"},

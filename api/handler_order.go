@@ -224,7 +224,8 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 		}
 		start := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
 
-		records, err := underlying.GetClosedPnL(start, limit)
+		// limit=0: pull full window from OKX (partial + full close rows stay separate).
+		records, err := underlying.GetClosedPnL(start, 0)
 		if err != nil {
 			SafeInternalError(c, "Fetch OKX position history", err)
 			return
@@ -232,6 +233,7 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 		positions := store.ClosedPnLRecordsToTraderPositions(
 			at.GetID(), at.GetExchangeID(), at.GetExchange(), toStoreClosedRecords(records),
 		)
+		logger.Infof("📜 OKX position history API [%s]: %d records (days=%d)", traderID, len(positions), days)
 		sortPositionsByExitTimeDesc(positions)
 		stats := store.ComputeFullStatsFromPositions(positions)
 		symbolStats := store.ComputeSymbolStatsFromPositions(positions, 10)

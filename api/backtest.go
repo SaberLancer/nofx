@@ -142,8 +142,10 @@ func (s *Server) handleBacktestStart(c *gin.Context) {
 		return
 	}
 
-	logger.Infof("📊 Starting backtest with final config: runID=%s, symbols=%v (count=%d), strategyID=%s",
-		cfg.RunID, cfg.Symbols, len(cfg.Symbols), cfg.StrategyID)
+	s.hydrateBacktestKlineConfig(&cfg)
+
+	logger.Infof("📊 Starting backtest with final config: runID=%s, symbols=%v (count=%d), strategyID=%s, klines=%s simulated=%v",
+		cfg.RunID, cfg.Symbols, len(cfg.Symbols), cfg.StrategyID, cfg.KlineExchange, cfg.KlineSimulated)
 
 	runner, err := s.backtestManager.Start(context.Background(), cfg)
 	if err != nil {
@@ -562,7 +564,7 @@ func (s *Server) handleBacktestKlines(c *gin.Context) {
 	startTime := time.Unix(cfg.StartTS, 0)
 	endTime := time.Unix(cfg.EndTS, 0)
 
-	klines, err := market.GetKlinesRange(symbol, timeframe, startTime, endTime)
+	klines, err := market.GetKlinesRange(symbol, timeframe, startTime, endTime, cfg.MarketKlineOptions())
 	if err != nil {
 		SafeInternalError(c, "Fetch klines", err)
 		return
@@ -888,4 +890,39 @@ func (s *Server) hydrateBacktestAIConfig(cfg *backtest.BacktestConfig) error {
 	}
 
 	return nil
+}
+
+// hydrateBacktestKlineConfig aligns backtest historical klines with the user's OKX demo/live setting.
+// Explicit kline_exchange in the request is preserved; otherwise the first enabled OKX account is used.
+func (s *Server) hydrateBacktestKlineConfig(cfg *backtest.BacktestConfig) {
+	if cfg == nil {
+		return
+	}
+	if strings.TrimSpace(cfg.KlineExchange) != "" {
+		cfg.KlineExchange = market.NormalizeKlineExchange(cfg.KlineExchange)
+		return
+	}
+	if s.store == nil {
+		cfg.KlineExchange = "binance"
+		return
+	}
+	exchanges, err := s.store.Exchange().List(cfg.UserID)
+	if err != nil {
+		logger.Warnf("⚠️ Backtest kline hydrate: list exchanges: %v — fallback binance", err)
+		cfg.KlineExchange = "binance"
+		return
+	}
+	for _, ex := range exchanges {
+		if ex == nil || !ex.Enabled {
+			continue
+		}
+		et := strings.ToLower(strings.TrimSpace(ex.ExchangeType))
+		if et == "okx" {
+			cfg.KlineExchange = "okx"
+			cfg.KlineSimulated = ex.Testnet
+			return
+		}
+	}
+	cfg.KlineExchange = "binance"
+	cfg.KlineSimulated = false
 }

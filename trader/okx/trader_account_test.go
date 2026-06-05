@@ -18,23 +18,15 @@ func TestParseOKXPositionsHistoryData_ArrayPayload(t *testing.T) {
 	}
 }
 
-func TestGetClosedPnLPathUsesBeforeNotAfter(t *testing.T) {
-	start := time.UnixMilli(1700000000000)
-	path := buildOKXPositionsHistoryPath(start, 50, "")
-	if strings.Contains(path, "after=") {
-		t.Fatalf("should not use after= for forward sync: %s", path)
-	}
-	if !strings.Contains(path, "before=1700000000000") {
-		t.Fatalf("expected before= in path: %s", path)
-	}
-	noFilter := buildOKXPositionsHistoryPath(time.Time{}, 100, "")
-	if strings.Contains(noFilter, "before=") || strings.Contains(noFilter, "after=") {
-		t.Fatalf("first sync should not add pagination: %s", noFilter)
+func TestGetClosedPnLPathFirstPageHasNoPagination(t *testing.T) {
+	path := buildOKXPositionsHistoryPath(50, "")
+	if strings.Contains(path, "after=") || strings.Contains(path, "before=") {
+		t.Fatalf("first page should not use pagination params: %s", path)
 	}
 }
 
 func TestGetClosedPnLPathPaginationUsesAfter(t *testing.T) {
-	path := buildOKXPositionsHistoryPath(time.Time{}, 100, "1700003600000")
+	path := buildOKXPositionsHistoryPath(100, "1700003600000")
 	if !strings.Contains(path, "after=1700003600000") {
 		t.Fatalf("expected after= in pagination path: %s", path)
 	}

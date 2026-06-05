@@ -21,6 +21,8 @@ const (
 	MaxAltLeverage    = 20
 	MinPositionRatio  = 0.5
 	MaxPositionRatio  = 10.0
+	// DefaultAltcoinMaxPositionValueRatio is system-enforced (same as BTC/ETH default).
+	DefaultAltcoinMaxPositionValueRatio = 5.0
 	MinRiskReward     = 1.0
 	MaxRiskReward     = 10.0
 	MinMarginUsage    = 0.1
@@ -102,6 +104,8 @@ func (c *StrategyConfig) ClampLimits() {
 	if c.RiskControl.AltcoinMaxPositionValueRatio > MaxPositionRatio {
 		c.RiskControl.AltcoinMaxPositionValueRatio = MaxPositionRatio
 	}
+	// System-enforced: altcoin max position value = equity × 5 (matches BTC/ETH).
+	c.RiskControl.AltcoinMaxPositionValueRatio = DefaultAltcoinMaxPositionValueRatio
 
 	// Clamp risk parameters and entry requirements.
 	if c.RiskControl.MinRiskRewardRatio < MinRiskReward {
@@ -606,6 +610,10 @@ type PreDecisionConfig struct {
 	MinSellPressure     float64 `json:"min_sell_pressure,omitempty"`
 	MinMomentumPct      float64 `json:"min_momentum_pct,omitempty"`
 	AlwaysWhenPositions bool    `json:"always_when_positions,omitempty"`
+	// Open gate: tick vs AI conflict — block at block gap, reduce size at reduce gap
+	TickConflictBlockGap    float64 `json:"tick_conflict_block_gap,omitempty"`
+	TickConflictReduceGap   float64 `json:"tick_conflict_reduce_gap,omitempty"`
+	TickConflictReduceRatio float64 `json:"tick_conflict_reduce_ratio,omitempty"`
 }
 
 // Normalize fills default pre-decision thresholds.
@@ -630,6 +638,15 @@ func (c *PreDecisionConfig) Normalize() {
 	}
 	if c.MinMomentumPct <= 0 {
 		c.MinMomentumPct = 0.03
+	}
+	if c.TickConflictBlockGap <= 0 {
+		c.TickConflictBlockGap = 0.20
+	}
+	if c.TickConflictReduceGap <= 0 {
+		c.TickConflictReduceGap = 0.10
+	}
+	if c.TickConflictReduceRatio <= 0 || c.TickConflictReduceRatio > 1 {
+		c.TickConflictReduceRatio = 0.5
 	}
 }
 
@@ -902,7 +919,7 @@ type RiskControlConfig struct {
 
 	// BTC/ETH single position max value = equity × this ratio (CODE ENFORCED, default: 5)
 	BTCETHMaxPositionValueRatio float64 `json:"btc_eth_max_position_value_ratio"`
-	// Altcoin single position max value = equity × this ratio (CODE ENFORCED, default: 1)
+	// Altcoin single position max value = equity × this ratio (CODE ENFORCED, default: 5)
 	AltcoinMaxPositionValueRatio float64 `json:"altcoin_max_position_value_ratio"`
 
 	// Max margin utilization (e.g. 0.9 = 90%) (CODE ENFORCED)
@@ -936,6 +953,16 @@ type RiskControlConfig struct {
 	StopLossPnLPct         float64 `json:"stop_loss_pnl_pct,omitempty"`          // e.g. -5 → loss cut
 	PeakMinForPullback     float64 `json:"peak_min_for_pullback,omitempty"`      // e.g. 10 → peak PnL% before pullback rule
 	PeakPullbackPts        float64 `json:"peak_pullback_pts,omitempty"`          // e.g. 4 → pp pullback from peak
+	PeakMaxAbsolutePct     float64 `json:"peak_max_absolute_pct,omitempty"`      // reject stored peaks above this (dirty peak guard)
+	PeakMaxJumpPts         float64 `json:"peak_max_jump_pts,omitempty"`          // reject peak if stored-current exceeds this in one sample
+
+	// Oscillation gate: pause opens when ADX is low and/or price chops in a range
+	OscillationGateEnabled *bool   `json:"oscillation_gate_enabled,omitempty"`
+	OscillationMaxADX      float64 `json:"oscillation_max_adx,omitempty"`
+	OscillationMaxRangePct float64 `json:"oscillation_max_range_pct,omitempty"`
+	OscillationRangeLookback int   `json:"oscillation_range_lookback,omitempty"`
+	OscillationSwingLookback int   `json:"oscillation_swing_lookback,omitempty"`
+	OscillationADXLagMax   float64 `json:"oscillation_adx_lag_max,omitempty"`
 }
 
 // NewStrategyStore creates a new StrategyStore
@@ -1018,7 +1045,7 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			BTCETHMaxLeverage:            5,   // BTC/ETH exchange leverage (AI guided)
 			AltcoinMaxLeverage:           5,   // Altcoin exchange leverage (AI guided)
 			BTCETHMaxPositionValueRatio:  5.0, // BTC/ETH: max position = 5x equity (CODE ENFORCED)
-			AltcoinMaxPositionValueRatio: 1.0, // Altcoin: max position = 1x equity (CODE ENFORCED)
+			AltcoinMaxPositionValueRatio: DefaultAltcoinMaxPositionValueRatio, // Altcoin: max position = 5x equity (CODE ENFORCED)
 			MaxMarginUsage:               0.9, // Max 90% margin usage (CODE ENFORCED)
 			MinPositionSize:              12,  // Min 12 USDT per position (CODE ENFORCED)
 			MinRiskRewardRatio:           3.0, // Min 3:1 profit/loss ratio (AI guided)

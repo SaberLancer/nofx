@@ -252,6 +252,53 @@ export const riskControl = {
     en: 'When off, TP is not simulated in backtest or placed in live; AI need not provide take_profit',
     es: 'Al desactivar, TP no se simula ni coloca',
   },
+  oscillationGate: { zh: '震荡识别（开仓门控）', en: 'Oscillation Gate (Open Filter)', es: 'Filtro de Rango' },
+  oscillationGateDesc: {
+    zh: '主周期 ADX 偏低、窄幅区间或高低点反复时，代码将 open_long/open_short 降为 wait（系统强制执行）',
+    en: 'On primary TF: low ADX, narrow range, or repeated swings → code downgrades opens to wait (CODE ENFORCED)',
+    es: 'ADX bajo o rango estrecho → abrir se bloquea (CÓDIGO)',
+  },
+  oscillationGateEnabled: { zh: '启用震荡门控', en: 'Enable Oscillation Gate', es: 'Activar Filtro' },
+  oscillationGateEnabledDesc: {
+    zh: '关闭后不因震荡暂停开仓；未配置时默认开启',
+    en: 'When off, opens are not paused for ranging markets; default on when unset',
+    es: 'Desactivado = no pausar por rango',
+  },
+  oscillationMaxAdx: { zh: 'ADX 上限', en: 'Max ADX', es: 'ADX Máx.' },
+  oscillationMaxAdxDesc: {
+    zh: '主周期 ADX(14) 低于此值视为震荡（默认 22）',
+    en: 'Primary TF ADX(14) below this → ranging (default 22)',
+    es: 'ADX(14) por debajo = rango',
+  },
+  oscillationMaxRangePct: { zh: '最小区间振幅', en: 'Max Range %', es: 'Rango Máx. %' },
+  oscillationMaxRangePctDesc: {
+    zh: '回看 K 线高低区间占现价 ≤ 此 % 且满足摆动条件时视为震荡（默认 4.5%）',
+    en: 'High-low range over lookback ≤ this % of price + swing pattern → ranging (default 4.5%)',
+    es: 'Rango estrecho %',
+  },
+  oscillationRangeLookback: { zh: '区间回看根数', en: 'Range Lookback Bars', es: 'Barras Rango' },
+  oscillationRangeLookbackDesc: {
+    zh: '计算价格区间宽度使用的 K 线根数（默认 14）',
+    en: 'Bars used to measure price range width (default 14)',
+    es: 'Barras para rango',
+  },
+  oscillationSwingLookback: { zh: '摆动回看根数', en: 'Swing Lookback Bars', es: 'Barras Swing' },
+  oscillationSwingLookbackDesc: {
+    zh: '检测反复测试高低点使用的 K 线根数（默认 12）',
+    en: 'Bars scanned for repeated high/low tests (default 12)',
+    es: 'Barras para swings',
+  },
+  oscillationAdxLagMax: { zh: 'ADX 滞后上限', en: 'ADX Lag Max', es: 'ADX Lag Máx.' },
+  oscillationAdxLagMaxDesc: {
+    zh: '窄幅区间内 ADX 仍高于 Max ADX 但低于此值时仍视为震荡（默认 30，应对 ADX 滞后）',
+    en: 'Narrow range + ADX below this (but above Max ADX) still counts as ranging (default 30, ADX lag)',
+    es: 'ADX rezagado en rango estrecho',
+  },
+  oscillationSystemEnforced: {
+    zh: '基于策略主周期 K 线，每轮 AI 决策后执行',
+    en: 'Uses strategy primary TF klines; applied after each AI decision',
+    es: 'K 线 del TF principal tras cada decisión AI',
+  },
 };
 
 // ============================================================================

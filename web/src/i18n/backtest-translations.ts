@@ -210,6 +210,7 @@ export const backtestTranslations = {
         back: 'Back',
         timeframes: 'Timeframes',
         strategyStyle: 'Strategy Style',
+        klineSource: 'Kline data',
       },
     backtestOverview: {
         activePositions: 'Active Positions',
@@ -482,6 +483,7 @@ export const backtestTranslations = {
         back: '上一步',
         timeframes: '时间周期',
         strategyStyle: '策略风格',
+        klineSource: '回测 K 线',
       },
     backtestOverview: {
         activePositions: '当前持仓',
@@ -758,6 +760,7 @@ export const backtestTranslations = {
         back: 'Back',
         timeframes: 'Timeframes',
         strategyStyle: 'Strategy Style',
+        klineSource: 'Kline data',
       },
     backtestOverview: {
         activePositions: 'Active Positions',

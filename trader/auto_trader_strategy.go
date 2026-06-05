@@ -44,6 +44,7 @@ func (at *AutoTrader) reloadStrategyConfigIfNeeded() {
 		return
 	}
 	cfg.NormalizeProductSchema()
+	cfg.ClampLimits()
 
 	at.strategyMu.Lock()
 	defer at.strategyMu.Unlock()

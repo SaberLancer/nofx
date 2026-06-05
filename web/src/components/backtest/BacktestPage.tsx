@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { DeepVoidBackground } from '../common/DeepVoidBackground'
 import { api } from '../../lib/api'
+import { resolveBacktestKlineSource } from '../../lib/resolveBacktestKline'
+import type { Exchange } from '../../types'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { t } from '../../i18n/translations'
 import { confirmToast } from '../../lib/notify'
@@ -115,6 +117,14 @@ export function BacktestPage() {
 
   const { data: aiModels } = useSWR<AIModel[]>('ai-models', api.getModelConfigs, { refreshInterval: 30000 })
   const { data: strategies } = useSWR<Strategy[]>('strategies', api.getStrategies, { refreshInterval: 30000 })
+  const { data: exchanges } = useSWR<Exchange[]>('exchange-configs', api.getExchangeConfigs, {
+    refreshInterval: 30000,
+  })
+
+  const klineSource = useMemo(
+    () => resolveBacktestKlineSource(exchanges, language),
+    [exchanges, language]
+  )
 
   const { data: status } = useSWR<BacktestStatusPayload>(
     selectedRunId ? ['bt-status', selectedRunId] : null,
@@ -248,6 +258,8 @@ export function BacktestPage() {
           btc_eth_leverage: formState.btcEthLeverage,
           altcoin_leverage: formState.altcoinLeverage,
         },
+        kline_exchange: klineSource.kline_exchange,
+        kline_simulated: klineSource.kline_simulated,
       })
 
       setToast({ text: tr('toasts.startSuccess', { id: payload.run_id }), tone: 'success' })
@@ -440,6 +452,7 @@ export function BacktestPage() {
               isStarting={isStarting}
               aiModels={aiModels}
               strategies={strategies}
+              klineSourceLabel={klineSource.label}
               language={language}
               tr={tr}
               onFormChange={handleFormChange}

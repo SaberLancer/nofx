@@ -217,7 +217,24 @@ func (s *PositionStore) BindOpenPositionExchangePositionID(traderID, exchangeID,
 	if strings.TrimSpace(pos.ExchangeID) == "" {
 		updates["exchange_id"] = exchangeID
 	}
-	return s.db.Model(&TraderPosition{}).Where("id = ?", pos.ID).Updates(updates).Error
+	err = s.db.Model(&TraderPosition{}).Where("id = ?", pos.ID).Updates(updates).Error
+	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		existing, findErr := s.GetOpenPositionByExchangePositionID(exchangeID, exchangePositionID)
+		if findErr != nil {
+			return findErr
+		}
+		if existing != nil && existing.ID != pos.ID {
+			nowMs := time.Now().UTC().UnixMilli()
+			return s.db.Model(&TraderPosition{}).Where("id = ?", pos.ID).Updates(map[string]interface{}{
+				"status":       "CLOSED",
+				"exit_time":    nowMs,
+				"updated_at":   nowMs,
+				"close_reason": "reconcile_duplicate_bind",
+			}).Error
+		}
+		return nil
+	}
+	return err
 }
 
 // BindLiveExchangePositionIDs binds all live exchange positions to their OPEN DB rows.

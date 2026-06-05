@@ -379,6 +379,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 	if config.StrategyConfig == nil {
 		return nil, fmt.Errorf("[%s] strategy not configured", config.Name)
 	}
+	config.StrategyConfig.ClampLimits()
 	// Pass claw402 wallet key to strategy engine so nofxos data requests
 	// are routed through claw402 (reuses the same wallet as AI calls)
 	claw402Key := config.Claw402WalletKey

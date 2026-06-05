@@ -218,7 +218,7 @@ export interface RiskControlConfig {
   // Position Value Ratio - single position notional value / account equity (CODE ENFORCED)
   // Max position value = equity × this ratio
   btc_eth_max_position_value_ratio?: number;     // default: 5 (BTC/ETH max position = 5x equity)
-  altcoin_max_position_value_ratio?: number;     // default: 1 (Altcoin max position = 1x equity)
+  altcoin_max_position_value_ratio?: number;     // default: 5 (Altcoin max position = 5x equity, system enforced)
 
   // Risk Parameters
   max_margin_usage: number;        // Max margin utilization, e.g. 0.9 = 90% (CODE ENFORCED)
@@ -234,6 +234,14 @@ export interface RiskControlConfig {
   stop_loss_pnl_pct?: number;
   peak_min_for_pullback?: number;
   peak_pullback_pts?: number;
+
+  /** Oscillation gate: pause opens when ADX low / range chops (CODE ENFORCED) */
+  oscillation_gate_enabled?: boolean;
+  oscillation_max_adx?: number;
+  oscillation_max_range_pct?: number;
+  oscillation_range_lookback?: number;
+  oscillation_swing_lookback?: number;
+  oscillation_adx_lag_max?: number;
 
   /** Min stop-loss distance (% of entry price, underlying move) */
   btc_eth_min_stop_loss_dist_pct?: number;

@@ -256,7 +256,7 @@ func positionValueRatioBTCETH(riskControl store.RiskControlConfig) float64 {
 func positionValueRatioAltcoin(riskControl store.RiskControlConfig) float64 {
 	r := riskControl.AltcoinMaxPositionValueRatio
 	if r <= 0 {
-		return 1.0
+		return store.DefaultAltcoinMaxPositionValueRatio
 	}
 	return r
 }

@@ -354,7 +354,7 @@ func validateTradeAction(
 		if isBTCETHSymbol(trade.Symbol) {
 			maxPositionValueRatio = 5.0
 		} else {
-			maxPositionValueRatio = 1.0
+			maxPositionValueRatio = store.DefaultAltcoinMaxPositionValueRatio
 		}
 	}
 	maxPositionValue := equity * maxPositionValueRatio

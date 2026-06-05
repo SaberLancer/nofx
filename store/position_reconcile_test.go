@@ -171,7 +171,7 @@ func TestSyncOpenPositionPeakPnLPctIgnoresGhostPeak(t *testing.T) {
 	}
 
 	livePosID := "okx_live_pos_999"
-	peak, err := ps.SyncOpenPositionPeakPnLPct(traderID, exchangeID, livePosID, "ETHUSDT", "SHORT", 1.5)
+	peak, err := ps.SyncOpenPositionPeakPnLPct(traderID, exchangeID, livePosID, "ETHUSDT", "SHORT", 1.5, 200, 30)
 	if err != nil {
 		t.Fatalf("sync peak: %v", err)
 	}

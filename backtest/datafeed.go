@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"nofx/logger"
 	"nofx/market"
 )
 
@@ -46,6 +47,9 @@ func NewDataFeed(cfg BacktestConfig) (*DataFeed, error) {
 }
 
 func (df *DataFeed) loadAll() error {
+	opts := df.cfg.MarketKlineOptions()
+	logger.Infof("📊 Backtest kline source: %s simulated=%v", opts.Exchange, opts.Simulated)
+
 	start := time.Unix(df.cfg.StartTS, 0)
 	end := time.Unix(df.cfg.EndTS, 0)
 
@@ -89,7 +93,7 @@ func (df *DataFeed) loadAll() error {
 			}
 			fetchEnd := end.Add(dur)
 
-			klines, err := market.GetKlinesRange(symbol, tf, fetchStart, fetchEnd)
+			klines, err := market.GetKlinesRange(symbol, tf, fetchStart, fetchEnd, df.cfg.MarketKlineOptions())
 			if err != nil {
 				return fmt.Errorf("fetch klines for %s %s: %w", symbol, tf, err)
 			}
