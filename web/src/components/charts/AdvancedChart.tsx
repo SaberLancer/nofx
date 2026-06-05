@@ -144,6 +144,8 @@ export function AdvancedChart({
   const [error, setError] = useState<string | null>(null)
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false)
   const [showOrderMarkers, setShowOrderMarkers] = useState(true) // Order marker toggle, default on
+  const showOrderMarkersRef = useRef(showOrderMarkers)
+  showOrderMarkersRef.current = showOrderMarkers
   const isInitialLoadRef = useRef(true) // Track if this is initial load
   const latestKlineDataRef = useRef<Kline[]>([])
   const [tooltipData, setTooltipData] = useState<any>(null)
@@ -795,8 +797,8 @@ export function AdvancedChart({
               // Store marker data for later toggle use
               currentMarkersDataRef.current = markers
 
-              // Using v5 API: createSeriesMarkers
-              const markersToShow = showOrderMarkers ? markers : []
+              // Using v5 API: createSeriesMarkers (read ref to avoid stale closure on 5s refresh)
+              const markersToShow = showOrderMarkersRef.current ? markers : []
 
               if (seriesMarkersRef.current) {
                 // If already exists, update markers
@@ -805,7 +807,7 @@ export function AdvancedChart({
                 // First time creating markers
                 seriesMarkersRef.current = createSeriesMarkers(candlestickSeriesRef.current, markersToShow)
               }
-              console.log('[AdvancedChart] ✅ Markers updated! Count:', markersToShow.length, 'Visible:', showOrderMarkers)
+              console.log('[AdvancedChart] ✅ Markers updated! Count:', markersToShow.length, 'Visible:', showOrderMarkersRef.current)
             } catch (err) {
               console.error('[AdvancedChart] ❌ Failed to set markers:', err)
             }
