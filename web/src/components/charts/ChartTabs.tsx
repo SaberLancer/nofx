@@ -345,7 +345,7 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId, exc
             </motion.div>
           ) : (
             <motion.div
-              key={`kline-${chartSymbol}-${interval}-${currentExchange}-${exchangeTestnet ? 'sim' : 'live'}`}
+              key={`kline-${currentExchange}-${exchangeTestnet ? 'sim' : 'live'}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}

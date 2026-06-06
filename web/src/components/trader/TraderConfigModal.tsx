@@ -660,8 +660,8 @@ export function TraderConfigModal({
                 <>
                   <p className="text-xs text-[#848E9C] leading-relaxed">
                     {language === 'zh'
-                      ? '按 1H 大局 → 15m 决策台 → 3m 扳机 三层配置。切换判定以 1H ADX 为主、15m 灰区确认为辅；3m 参数供止损参考。与策略模板无关。'
-                      : '1H bias → 15m desk → 3m trigger. Switching uses 1H+15m; 3m is SL reference only.'}
+                      ? '按 1H 大局 → 15m 决策台 → 3m 扳机 三层配置。切换判定以 1H+15m 为主，3m 扳机同向确认或 1H/15m 未决时参考；ATR 倍数供止损参考。'
+                      : '1H bias → 15m desk → 3m trigger. Switching uses 1H+15m with 3m confirmation; ATR multiple for SL.'}
                   </p>
                   <div className="grid grid-cols-1 gap-4">
                     <div>
@@ -810,8 +810,8 @@ export function TraderConfigModal({
                       </div>
                       <p className="text-[10px] text-[#848E9C]">
                         {language === 'zh'
-                          ? '15m 确认可吃单后，策略内用 3m 找入场；止损=ATR倍数或 15m 结构外。不参与自动切策略判定。'
-                          : 'Entry timing on 3m; SL = ATR multiple or structure. Not used for regime switch.'}
+                          ? '3m ADX/ATR 参与行情检测：与 1H/15m 同向则确认切换，冲突或未决则暂缓；止损=ATR倍数或结构外。'
+                          : '3m ADX/ATR joins regime check: confirms 1H/15m or blocks on conflict; SL = ATR × or structure.'}
                       </p>
                       {formData.regime_detection.layer_3m.enabled && (
                         <div className="grid grid-cols-2 gap-3">

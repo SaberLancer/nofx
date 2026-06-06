@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   createChart,
   IChartApi,
+  IPaneApi,
   ISeriesApi,
   Time,
   UTCTimestamp,
@@ -17,12 +18,23 @@ import {
   calculateSMA,
   calculateEMA,
   calculateBollingerBands,
+  calculateADX,
+  calculateADXAtBar,
+  calculateRollingADXSeries,
   type Kline,
 } from '../../utils/indicators'
+import { loadChartIndicatorPresets, saveChartIndicatorPresets } from '../../lib/chartIndicatorStorage'
 import { Settings, BarChart2 } from 'lucide-react'
 
 // Default number of candles shown on first load / symbol change
 const DEFAULT_VISIBLE_BARS = 80
+const ADX_PANE_STRETCH = 0.38
+
+const ADX_PRICE_FORMAT = {
+  type: 'price' as const,
+  precision: 1,
+  minMove: 0.1,
+}
 
 // A-share style: red up, green down
 const KLINE_UP_COLOR = '#F6465D'
@@ -85,6 +97,18 @@ interface IndicatorConfig {
   params?: any
 }
 
+const DEFAULT_INDICATORS: IndicatorConfig[] = [
+  { id: 'volume', name: 'Volume', enabled: false, color: '#3B82F6' },
+  { id: 'ma5', name: 'MA5', enabled: false, color: '#FF6B6B', params: { period: 5 } },
+  { id: 'ma10', name: 'MA10', enabled: false, color: '#4ECDC4', params: { period: 10 } },
+  { id: 'ma20', name: 'MA20', enabled: false, color: '#FFD93D', params: { period: 20 } },
+  { id: 'ma60', name: 'MA60', enabled: false, color: '#95E1D3', params: { period: 60 } },
+  { id: 'ema12', name: 'EMA12', enabled: false, color: '#A8E6CF', params: { period: 12 } },
+  { id: 'ema26', name: 'EMA26', enabled: false, color: '#FFD3B6', params: { period: 26 } },
+  { id: 'bb', name: 'Bollinger Bands', enabled: false, color: '#9B59B6' },
+  { id: 'adx', name: 'ADX (14)', enabled: false, color: '#F0B90B', params: { period: 14, klineCount: 60 } },
+]
+
 // Get quote currency unit
 const getQuoteUnit = (exchange: string): string => {
   if (['alpaca'].includes(exchange)) {
@@ -134,6 +158,11 @@ export function AdvancedChart({
   const chartRef = useRef<IChartApi | null>(null)
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  const adxPaneRef = useRef<IPaneApi<Time> | null>(null)
+  const adxSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const plusDISeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const minusDISeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const loadSeqRef = useRef(0)
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<any>>>(new Map())
   const seriesMarkersRef = useRef<any>(null) // Markers primitive for v5
   const currentMarkersDataRef = useRef<any[]>([]) // Store current marker data
@@ -148,6 +177,8 @@ export function AdvancedChart({
   showOrderMarkersRef.current = showOrderMarkers
   const isInitialLoadRef = useRef(true) // Track if this is initial load
   const latestKlineDataRef = useRef<Kline[]>([])
+  const adxLastRef = useRef<{ adx: number; plusDI: number; minusDI: number } | null>(null)
+  const [adxDisplay, setAdxDisplay] = useState<{ adx: number; plusDI: number; minusDI: number } | null>(null)
   const [tooltipData, setTooltipData] = useState<any>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
 
@@ -162,19 +193,89 @@ export function AdvancedChart({
     quoteVolume: number // Turnover (USDT/USD)
   } | null>(null)
 
-  // Indicator configuration
-  const [indicators, setIndicators] = useState<IndicatorConfig[]>([
-    { id: 'volume', name: 'Volume', enabled: false, color: '#3B82F6' },
-    { id: 'ma5', name: 'MA5', enabled: false, color: '#FF6B6B', params: { period: 5 } },
-    { id: 'ma10', name: 'MA10', enabled: false, color: '#4ECDC4', params: { period: 10 } },
-    { id: 'ma20', name: 'MA20', enabled: false, color: '#FFD93D', params: { period: 20 } },
-    { id: 'ma60', name: 'MA60', enabled: false, color: '#95E1D3', params: { period: 60 } },
-    { id: 'ema12', name: 'EMA12', enabled: false, color: '#A8E6CF', params: { period: 12 } },
-    { id: 'ema26', name: 'EMA26', enabled: false, color: '#FFD3B6', params: { period: 26 } },
-    { id: 'bb', name: 'Bollinger Bands', enabled: false, color: '#9B59B6' },
-  ])
+  // Indicator configuration (restored from localStorage on mount)
+  const [indicators, setIndicators] = useState<IndicatorConfig[]>(() =>
+    loadChartIndicatorPresets(DEFAULT_INDICATORS)
+  )
   const indicatorsRef = useRef(indicators)
   indicatorsRef.current = indicators
+  const intervalRef = useRef(interval)
+  intervalRef.current = interval
+
+  const applyChartLayoutMargins = (indicatorList: IndicatorConfig[] = indicatorsRef.current) => {
+    const chart = chartRef.current
+    if (!chart) return
+
+    const volumeOn = indicatorList.find(i => i.id === 'volume')?.enabled
+    const candleBottom = volumeOn ? 0.22 : 0.08
+
+    chart.priceScale('right').applyOptions({
+      scaleMargins: { top: 0.05, bottom: candleBottom },
+    })
+
+    if (volumeOn) {
+      chart.priceScale('').applyOptions({
+        scaleMargins: { top: 0.82, bottom: 0 },
+      })
+    }
+  }
+
+  const applyAdxPriceScaleOptions = () => {
+    if (!adxSeriesRef.current) return
+    adxSeriesRef.current.priceScale().applyOptions({
+      borderVisible: false,
+      // Reserve bottom space for the HTML legend above the time axis
+      scaleMargins: { top: 0.1, bottom: 0.32 },
+      alignLabels: true,
+      minimumWidth: 88,
+      ticksVisible: false,
+    })
+  }
+
+  const setAdxPaneVisible = (visible: boolean) => {
+    const pane = adxPaneRef.current
+    if (!pane) return
+    pane.setStretchFactor(visible ? ADX_PANE_STRETCH : 0)
+    pane.setPreserveEmptyPane(visible)
+    if (visible) {
+      applyAdxPriceScaleOptions()
+    }
+  }
+
+  const applyADXIndicator = (klineData: Kline[], indicatorList: IndicatorConfig[] = indicatorsRef.current) => {
+    if (!adxSeriesRef.current) return
+
+    const adxCfg = indicatorList.find(i => i.id === 'adx')
+    if (!adxCfg?.enabled) {
+      adxSeriesRef.current.setData([])
+      plusDISeriesRef.current?.setData([])
+      minusDISeriesRef.current?.setData([])
+      adxLastRef.current = null
+      setAdxDisplay(null)
+      setAdxPaneVisible(false)
+      return
+    }
+
+    setAdxPaneVisible(true)
+    const period = adxCfg.params?.period ?? 14
+    const klineCount = adxCfg.params?.klineCount ?? 60
+    const alignRegime = intervalRef.current === '1h'
+    const points = alignRegime
+      ? calculateRollingADXSeries(klineData, period, klineCount)
+      : calculateADX(klineData, period)
+    adxSeriesRef.current.setData(points.map(p => ({ time: p.time as Time, value: p.adx })))
+    plusDISeriesRef.current?.setData(points.map(p => ({ time: p.time as Time, value: p.plusDI })))
+    minusDISeriesRef.current?.setData(points.map(p => ({ time: p.time as Time, value: p.minusDI })))
+    applyAdxPriceScaleOptions()
+    if (points.length > 0) {
+      const last = points[points.length - 1]
+      adxLastRef.current = { adx: last.adx, plusDI: last.plusDI, minusDI: last.minusDI }
+      setAdxDisplay(adxLastRef.current)
+    } else {
+      adxLastRef.current = null
+      setAdxDisplay(null)
+    }
+  }
 
   const applyVolumeIndicator = (klineData: Kline[], indicatorList: IndicatorConfig[] = indicatorsRef.current) => {
     if (!volumeSeriesRef.current) return
@@ -257,14 +358,16 @@ export function AdvancedChart({
   }
 
   const applyIndicatorOverlay = (klineData: Kline[]) => {
+    applyChartLayoutMargins()
     applyVolumeIndicator(klineData)
+    applyADXIndicator(klineData)
     updateIndicators(klineData)
   }
 
   // Fetch kline data from service
   const fetchKlineData = async (symbol: string, interval: string) => {
     try {
-      const limit = 1500
+      const limit = 500
       const simulatedParam =
         exchangeSimulated && exchange.toLowerCase() === 'okx' ? '&simulated=1' : ''
       const klineUrl = `/api/klines?symbol=${symbol}&interval=${interval}&limit=${limit}&exchange=${exchange}${simulatedParam}`
@@ -569,11 +672,53 @@ export function AdvancedChart({
     })
     volumeSeriesRef.current = volumeSeries as any
 
+    const adxPane = chart.addPane(false)
+    adxPane.setStretchFactor(0)
+    adxPane.setPreserveEmptyPane(false)
+    adxPaneRef.current = adxPane
+
+    const adxSeries = adxPane.addSeries(LineSeries, {
+      color: '#F0B90B',
+      lineWidth: 2,
+      title: '',
+      lastValueVisible: false,
+      priceLineVisible: false,
+      priceFormat: ADX_PRICE_FORMAT,
+    })
+    adxSeriesRef.current = adxSeries as ISeriesApi<'Line'>
+
+    const plusDISeries = adxPane.addSeries(LineSeries, {
+      color: '#0ECB81',
+      lineWidth: 1,
+      title: '',
+      lineStyle: 2,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      priceFormat: ADX_PRICE_FORMAT,
+    })
+    plusDISeriesRef.current = plusDISeries as ISeriesApi<'Line'>
+
+    const minusDISeries = adxPane.addSeries(LineSeries, {
+      color: '#F6465D',
+      lineWidth: 1,
+      title: '',
+      lineStyle: 2,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      priceFormat: ADX_PRICE_FORMAT,
+    })
+    minusDISeriesRef.current = minusDISeries as ISeriesApi<'Line'>
+
+    applyAdxPriceScaleOptions()
+
     // Responsive resize (ResizeObserver)
     const resizeObserver = new ResizeObserver((entries) => {
       if (entries.length === 0 || !entries[0].contentRect) return
       const { width, height } = entries[0].contentRect
       chart.applyOptions({ width, height })
+      if (indicatorsRef.current.find(i => i.id === 'adx')?.enabled) {
+        applyAdxPriceScaleOptions()
+      }
     })
 
     if (chartContainerRef.current) {
@@ -582,6 +727,38 @@ export function AdvancedChart({
 
     // Listen for crosshair movement to show OHLC info
     chart.subscribeCrosshairMove((param) => {
+      const adxEnabled = indicatorsRef.current.find(i => i.id === 'adx')?.enabled
+      if (adxEnabled) {
+        if (!param.time || !param.point) {
+          setAdxDisplay(adxLastRef.current)
+        } else {
+          const adxCfg = indicatorsRef.current.find(i => i.id === 'adx')
+          const period = adxCfg?.params?.period ?? 14
+          const klineCount = adxCfg?.params?.klineCount ?? 60
+          const alignRegime = intervalRef.current === '1h'
+          if (alignRegime) {
+            const klines = latestKlineDataRef.current
+            const barIdx = klines.findIndex(k => k.time === param.time)
+            if (barIdx >= 0) {
+              const pt = calculateADXAtBar(klines, barIdx, period, klineCount)
+              if (pt) setAdxDisplay({ adx: pt.adx, plusDI: pt.plusDI, minusDI: pt.minusDI })
+            }
+          } else {
+            const readLineVal = (series: ISeriesApi<'Line'> | null): number | undefined => {
+              if (!series) return undefined
+              const d = param.seriesData.get(series as any) as { value?: number } | undefined
+              return typeof d?.value === 'number' ? d.value : undefined
+            }
+            const adx = readLineVal(adxSeriesRef.current)
+            const plusDI = readLineVal(plusDISeriesRef.current)
+            const minusDI = readLineVal(minusDISeriesRef.current)
+            if (adx !== undefined && plusDI !== undefined && minusDI !== undefined) {
+              setAdxDisplay({ adx, plusDI, minusDI })
+            }
+          }
+        }
+      }
+
       if (!param.time || !param.point || !candlestickSeriesRef.current) {
         setTooltipData(null)
         return
@@ -636,6 +813,7 @@ export function AdvancedChart({
 
     const loadData = async (isRefresh = false) => {
       if (!candlestickSeriesRef.current) return
+      const seq = ++loadSeqRef.current
 
       console.log('[AdvancedChart] Loading data for', symbol, interval, isRefresh ? '(refresh)' : '')
       // Only show loading on first load, avoid flicker on refresh
@@ -647,6 +825,7 @@ export function AdvancedChart({
       try {
         // 1. Fetch kline data
         const klineData = await fetchKlineData(symbol, interval)
+        if (seq !== loadSeqRef.current) return
         console.log('[AdvancedChart] Loaded', klineData.length, 'klines')
         latestKlineDataRef.current = klineData
         candlestickSeriesRef.current.setData(klineData)
@@ -690,11 +869,13 @@ export function AdvancedChart({
 
         // 2. Display volume + line indicators
         applyIndicatorOverlay(klineData)
+        if (seq !== loadSeqRef.current) return
 
         // 3. Fetch and display order markers
         if (traderID && candlestickSeriesRef.current) {
           console.log('[AdvancedChart] Starting to fetch orders...')
           const orders = await fetchOrders(traderID, symbol)
+          if (seq !== loadSeqRef.current) return
           console.log('[AdvancedChart] Received orders:', orders)
 
           if (orders.length > 0) {
@@ -855,6 +1036,11 @@ export function AdvancedChart({
     return () => clearInterval(refreshInterval)
   }, [symbol, interval, traderID, exchange, exchangeSimulated])
 
+  // Persist indicator toggles and params across page refresh
+  useEffect(() => {
+    saveChartIndicatorPresets(indicators)
+  }, [indicators])
+
   // Re-apply indicators immediately when user toggles checkboxes
   useEffect(() => {
     if (latestKlineDataRef.current.length === 0) return
@@ -962,6 +1148,26 @@ export function AdvancedChart({
     )
   }
 
+  const updateIndicatorPeriod = (id: string, rawPeriod: number) => {
+    const period = Math.min(28, Math.max(7, rawPeriod || 14))
+    setIndicators(prev =>
+      prev.map(ind => {
+        if (ind.id !== id) return ind
+        const label = id === 'adx' ? `ADX (${period})` : ind.name
+        return { ...ind, params: { ...ind.params, period }, name: label }
+      })
+    )
+  }
+
+  const updateIndicatorKlineCount = (rawCount: number) => {
+    const klineCount = Math.min(300, Math.max(28, rawCount || 60))
+    setIndicators(prev =>
+      prev.map(ind =>
+        ind.id === 'adx' ? { ...ind, params: { ...ind.params, klineCount } } : ind
+      )
+    )
+  }
+
   return (
     <div
       className="relative shadow-xl"
@@ -1027,6 +1233,28 @@ export function AdvancedChart({
                   <span>Vol <span className="text-gray-300">{formatVolume(marketStats.volume)}</span></span>
                 )}
               </div>
+            </div>
+          )}
+
+          {adxDisplay && indicators.find(i => i.id === 'adx')?.enabled && (
+            <div className="flex items-center gap-2.5 pl-3 border-l border-[#2B3139] text-[11px] tabular-nums">
+              <span className="text-[10px] text-gray-500 mr-0.5">
+                {interval === '1h'
+                  ? t('advancedChart.adxRegime1h', language)
+                  : t('advancedChart.adxChartOnly', language)}
+              </span>
+              <span>
+                <span className="text-yellow-500/90">ADX </span>
+                <span className="text-gray-200 font-medium">{adxDisplay.adx.toFixed(1)}</span>
+              </span>
+              <span>
+                <span className="text-[#0ECB81]">+DI </span>
+                <span className="text-gray-200 font-medium">{adxDisplay.plusDI.toFixed(1)}</span>
+              </span>
+              <span>
+                <span className="text-[#F6465D]">-DI </span>
+                <span className="text-gray-200 font-medium">{adxDisplay.minusDI.toFixed(1)}</span>
+              </span>
             </div>
           )}
         </div>
@@ -1098,29 +1326,63 @@ export function AdvancedChart({
           {/* Indicator list */}
           <div className="p-3 space-y-1">
             {indicators.map(indicator => (
-              <label
+              <div
                 key={indicator.id}
-                className="flex items-center gap-3 p-2.5 rounded-md hover:bg-white/5 cursor-pointer transition-all group"
+                className="flex items-center gap-3 p-2.5 rounded-md hover:bg-white/5 transition-all group"
               >
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={indicator.enabled}
-                    onChange={() => toggleIndicator(indicator.id)}
-                    className="w-4 h-4 rounded border-gray-600 text-yellow-500 focus:ring-2 focus:ring-yellow-500/50"
-                  />
-                </div>
-                <div
-                  className="w-8 h-3 rounded-sm border border-white/10"
-                  style={{ backgroundColor: indicator.color }}
-                ></div>
-                <span className="text-sm text-gray-300 group-hover:text-white transition-colors flex-1">
-                  {indicator.name}
-                </span>
-                {indicator.enabled && (
-                  <span className="text-xs text-yellow-400">●</span>
+                <label className="flex items-center gap-3 flex-1 cursor-pointer min-w-0">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={indicator.enabled}
+                      onChange={() => toggleIndicator(indicator.id)}
+                      className="w-4 h-4 rounded border-gray-600 text-yellow-500 focus:ring-2 focus:ring-yellow-500/50"
+                    />
+                  </div>
+                  <div
+                    className="w-8 h-3 rounded-sm border border-white/10 shrink-0"
+                    style={{ backgroundColor: indicator.color }}
+                  ></div>
+                  <span className="text-sm text-gray-300 group-hover:text-white transition-colors flex-1 truncate">
+                    {indicator.name}
+                  </span>
+                  {indicator.enabled && (
+                    <span className="text-xs text-yellow-400 shrink-0">●</span>
+                  )}
+                </label>
+                {indicator.id === 'adx' && (
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-gray-500">
+                        {t('advancedChart.adxPeriod', language)}
+                      </span>
+                      <input
+                        type="number"
+                        min={7}
+                        max={28}
+                        step={1}
+                        value={indicator.params?.period ?? 14}
+                        onChange={(e) => updateIndicatorPeriod('adx', parseInt(e.target.value, 10))}
+                        className="w-12 px-1.5 py-0.5 rounded text-xs text-gray-200 bg-black/30 border border-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-gray-500">
+                        {t('advancedChart.adxKlineCount', language)}
+                      </span>
+                      <input
+                        type="number"
+                        min={28}
+                        max={300}
+                        step={1}
+                        value={indicator.params?.klineCount ?? 60}
+                        onChange={(e) => updateIndicatorKlineCount(parseInt(e.target.value, 10))}
+                        className="w-12 px-1.5 py-0.5 rounded text-xs text-gray-200 bg-black/30 border border-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                      />
+                    </div>
+                  </div>
                 )}
-              </label>
+              </div>
             ))}
           </div>
 
@@ -1206,12 +1468,41 @@ export function AdvancedChart({
           </div>
         )}
 
-        {/* NOFX watermark */}
+        {/* ADX legend — fixed above time axis so title + value are never clipped */}
+        {adxDisplay && indicators.find(i => i.id === 'adx')?.enabled && (
+          <div
+            className="absolute flex flex-col items-end gap-0.5 pointer-events-none"
+            style={{ right: 6, bottom: 26, zIndex: 20 }}
+          >
+            {(
+              [
+                { label: 'ADX', value: adxDisplay.adx, bg: '#F0B90B', fg: '#0B0E11' },
+                { label: '+DI', value: adxDisplay.plusDI, bg: '#0ECB81', fg: '#0B0E11' },
+                { label: '-DI', value: adxDisplay.minusDI, bg: '#F6465D', fg: '#FFFFFF' },
+              ] as const
+            ).map(row => (
+              <div key={row.label} className="flex items-center gap-1 tabular-nums leading-none">
+                <span
+                  className="text-[10px] font-semibold px-1 rounded-sm"
+                  style={{ backgroundColor: row.bg, color: row.fg }}
+                >
+                  {row.label}
+                </span>
+                <span className="text-[11px] font-medium" style={{ color: row.bg }}>
+                  {row.value.toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* NOFX watermark — hidden when ADX pane is on to avoid covering scale labels */}
+        {!indicators.find(i => i.id === 'adx')?.enabled && (
         <div
           style={{
             position: 'absolute',
-            bottom: '20%',
-            right: '5%',
+            top: '38%',
+            right: '8%',
             pointerEvents: 'none',
             userSelect: 'none',
             zIndex: 1,
@@ -1230,6 +1521,7 @@ export function AdvancedChart({
             NOFX
           </div>
         </div>
+        )}
       </div>
 
       {/* Error message */}

@@ -182,6 +182,126 @@ export interface BollingerBands {
   lower: number
 }
 
+export interface ADXPoint {
+  time: number
+  adx: number
+  plusDI: number
+  minusDI: number
+}
+
+/** Wilder ADX(period) time series — matches backend market.CalculateADX smoothing. */
+export function calculateADX(data: Kline[], period = 14): ADXPoint[] {
+  if (period <= 0) period = 14
+  const n = data.length
+  if (n < period * 2) return []
+
+  const tr = new Array<number>(n).fill(0)
+  const pdm = new Array<number>(n).fill(0)
+  const mdm = new Array<number>(n).fill(0)
+
+  for (let i = 1; i < n; i++) {
+    const up = data[i].high - data[i - 1].high
+    const down = data[i - 1].low - data[i].low
+    if (up > down && up > 0) pdm[i] = up
+    if (down > up && down > 0) mdm[i] = down
+    const h = data[i].high
+    const l = data[i].low
+    const pc = data[i - 1].close
+    tr[i] = Math.max(h - l, Math.max(Math.abs(h - pc), Math.abs(l - pc)))
+  }
+
+  let sumTR = 0
+  let sumPDM = 0
+  let sumMDM = 0
+  for (let i = 1; i <= period; i++) {
+    sumTR += tr[i]
+    sumPDM += pdm[i]
+    sumMDM += mdm[i]
+  }
+
+  let atr = sumTR
+  let sp = sumPDM
+  let sm = sumMDM
+
+  const dxBuf: number[] = []
+  const diBuf: Array<{ plus: number; minus: number }> = []
+
+  for (let i = period; i < n; i++) {
+    if (i > period) {
+      atr = atr - atr / period + tr[i]
+      sp = sp - sp / period + pdm[i]
+      sm = sm - sm / period + mdm[i]
+    }
+    let plusDI = 0
+    let minusDI = 0
+    let dx = 0
+    if (atr !== 0) {
+      plusDI = (100 * sp) / atr
+      minusDI = (100 * sm) / atr
+      const denom = plusDI + minusDI
+      if (denom > 0) {
+        dx = (100 * Math.abs(plusDI - minusDI)) / denom
+      }
+    }
+    dxBuf.push(dx)
+    diBuf.push({ plus: plusDI, minus: minusDI })
+  }
+
+  if (dxBuf.length < period) return []
+
+  const result: ADXPoint[] = []
+  let adx = 0
+  for (let i = 0; i < period; i++) {
+    adx += dxBuf[i]
+  }
+  adx /= period
+
+  for (let i = period - 1; i < dxBuf.length; i++) {
+    if (i > period - 1) {
+      adx = (adx * (period - 1) + dxBuf[i]) / period
+    }
+    const klineIdx = period + i
+    result.push({
+      time: data[klineIdx].time,
+      adx,
+      plusDI: diBuf[i].plus,
+      minusDI: diBuf[i].minus,
+    })
+  }
+
+  return result
+}
+
+/** ADX at bar endIdx using a trailing window (matches backend regime detection kline_count). */
+export function calculateADXAtBar(
+  klines: Kline[],
+  endIdx: number,
+  period = 14,
+  klineCount = 60
+): ADXPoint | null {
+  if (endIdx < 0 || endIdx >= klines.length) return null
+  const start = Math.max(0, endIdx - klineCount + 1)
+  const window = klines.slice(start, endIdx + 1)
+  const pts = calculateADX(window, period)
+  if (pts.length === 0) return null
+  const last = pts[pts.length - 1]
+  return { ...last, time: klines[endIdx].time }
+}
+
+/** Rolling regime-style ADX series (each point uses trailing klineCount bars). */
+export function calculateRollingADXSeries(
+  klines: Kline[],
+  period = 14,
+  klineCount = 60
+): ADXPoint[] {
+  const result: ADXPoint[] = []
+  for (let i = 0; i < klines.length; i++) {
+    const pt = calculateADXAtBar(klines, i, period, klineCount)
+    if (pt) result.push(pt)
+  }
+  return result
+}
+
 export function calculateBollingerBands(
   data: Kline[],
   period = 20,

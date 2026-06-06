@@ -47,38 +47,104 @@ export function translateExecutionLogLine(line: string, language: Language): str
     return '[市场状态检测] 已跳过（无检测标的）'
   }
 
+  const formatRegimeMetrics = (
+    adx1h: string,
+    adx15m: string,
+    adx3m: string,
+    atr3m: string,
+    bbw: string
+  ) => `1H ADX=${adx1h} 15m ADX=${adx15m} 3m ADX=${adx3m} 3m ATR=${atr3m} BBW=${bbw}%`
+
   const regimeInconclusive = s.match(
-    /^regime-detect: inconclusive symbol=(\S+) adx_1h=([\d.]+) adx_15m=([\d.]+) bbw_15m_pct=([\d.]+) \| (.+)$/
+    /^regime-detect: inconclusive symbol=(\S+) adx_1h=([\d.]+) adx_15m=([\d.]+) adx_3m=([\d.]+) atr_3m=([\d.]+) bbw_15m_pct=([\d.]+) \| (.+)$/
   )
   if (regimeInconclusive) {
-    return `[市场状态检测] 未决 ${regimeInconclusive[1]} | 1H ADX=${regimeInconclusive[2]} 15m ADX=${regimeInconclusive[3]} BBW=${regimeInconclusive[4]}% | ${regimeInconclusive[5]}`
+    return `[市场状态检测] 未决 ${regimeInconclusive[1]} | ${formatRegimeMetrics(
+      regimeInconclusive[2],
+      regimeInconclusive[3],
+      regimeInconclusive[4],
+      regimeInconclusive[5],
+      regimeInconclusive[6]
+    )} | ${regimeInconclusive[7]}`
+  }
+
+  const regimeInconclusiveLegacy = s.match(
+    /^regime-detect: inconclusive symbol=(\S+) adx_1h=([\d.]+) adx_15m=([\d.]+) bbw_15m_pct=([\d.]+) \| (.+)$/
+  )
+  if (regimeInconclusiveLegacy) {
+    return `[市场状态检测] 未决 ${regimeInconclusiveLegacy[1]} | 1H ADX=${regimeInconclusiveLegacy[2]} 15m ADX=${regimeInconclusiveLegacy[3]} BBW=${regimeInconclusiveLegacy[4]}% | ${regimeInconclusiveLegacy[5]}`
   }
 
   const regimeVerdict = s.match(
-    /^regime-detect: verdict=(\w+) symbol=(\S+) adx_1h=([\d.]+) adx_15m=([\d.]+) strategy=(.+) \| (.+)$/
+    /^regime-detect: verdict=(\w+) symbol=(\S+) adx_1h=([\d.]+) adx_15m=([\d.]+) adx_3m=([\d.]+) atr_3m=([\d.]+) bbw_15m_pct=([\d.]+) strategy=(.+) \| (.+)$/
   )
   if (regimeVerdict) {
     const verdictZh =
       regimeVerdict[1] === 'oscillation' ? '震荡' : regimeVerdict[1] === 'trend' ? '趋势' : regimeVerdict[1]
-    return `[市场状态检测] 判定=${verdictZh} ${regimeVerdict[2]} | 1H ADX=${regimeVerdict[3]} 15m ADX=${regimeVerdict[4]} | 当前策略=${regimeVerdict[5]} | ${regimeVerdict[6]}`
+    return `[市场状态检测] 判定=${verdictZh} ${regimeVerdict[2]} | ${formatRegimeMetrics(
+      regimeVerdict[3],
+      regimeVerdict[4],
+      regimeVerdict[5],
+      regimeVerdict[6],
+      regimeVerdict[7]
+    )} | 当前策略=${regimeVerdict[8]} | ${regimeVerdict[9]}`
+  }
+
+  const regimeVerdictLegacy = s.match(
+    /^regime-detect: verdict=(\w+) symbol=(\S+) adx_1h=([\d.]+) adx_15m=([\d.]+) strategy=(.+) \| (.+)$/
+  )
+  if (regimeVerdictLegacy) {
+    const verdictZh =
+      regimeVerdictLegacy[1] === 'oscillation' ? '震荡' : regimeVerdictLegacy[1] === 'trend' ? '趋势' : regimeVerdictLegacy[1]
+    return `[市场状态检测] 判定=${verdictZh} ${regimeVerdictLegacy[2]} | 1H ADX=${regimeVerdictLegacy[3]} 15m ADX=${regimeVerdictLegacy[4]} | 当前策略=${regimeVerdictLegacy[5]} | ${regimeVerdictLegacy[6]}`
   }
 
   const regimePending = s.match(
-    /^regime-switch: pending (\w+) symbol=(\S+) confirm=(\d+)\/(\d+) target=(.+) adx_1h=([\d.]+) adx_15m=([\d.]+) \| (.+)$/
+    /^regime-switch: pending (\w+) symbol=(\S+) confirm=(\d+)\/(\d+) target=(.+) adx_1h=([\d.]+) adx_15m=([\d.]+) adx_3m=([\d.]+) atr_3m=([\d.]+) bbw_15m_pct=([\d.]+) \| (.+)$/
   )
   if (regimePending) {
     const verdictZh =
       regimePending[1] === 'oscillation' ? '震荡' : regimePending[1] === 'trend' ? '趋势' : regimePending[1]
-    return `[市场状态切换] 待确认 ${verdictZh} ${regimePending[2]}（${regimePending[3]}/${regimePending[4]}）→ ${regimePending[5]} | 1H ADX=${regimePending[6]} 15m ADX=${regimePending[7]} | ${regimePending[8]}`
+    return `[市场状态切换] 待确认 ${verdictZh} ${regimePending[2]}（${regimePending[3]}/${regimePending[4]}）→ ${regimePending[5]} | ${formatRegimeMetrics(
+      regimePending[6],
+      regimePending[7],
+      regimePending[8],
+      regimePending[9],
+      regimePending[10]
+    )} | ${regimePending[11]}`
+  }
+
+  const regimePendingLegacy = s.match(
+    /^regime-switch: pending (\w+) symbol=(\S+) confirm=(\d+)\/(\d+) target=(.+) adx_1h=([\d.]+) adx_15m=([\d.]+) \| (.+)$/
+  )
+  if (regimePendingLegacy) {
+    const verdictZh =
+      regimePendingLegacy[1] === 'oscillation' ? '震荡' : regimePendingLegacy[1] === 'trend' ? '趋势' : regimePendingLegacy[1]
+    return `[市场状态切换] 待确认 ${verdictZh} ${regimePendingLegacy[2]}（${regimePendingLegacy[3]}/${regimePendingLegacy[4]}）→ ${regimePendingLegacy[5]} | 1H ADX=${regimePendingLegacy[6]} 15m ADX=${regimePendingLegacy[7]} | ${regimePendingLegacy[8]}`
   }
 
   const regimeConfirmed = s.match(
-    /^regime-switch: confirmed (\w+) symbol=(\S+) switched_to=(.+) adx_1h=([\d.]+) adx_15m=([\d.]+) \| (.+)$/
+    /^regime-switch: confirmed (\w+) symbol=(\S+) switched_to=(.+) adx_1h=([\d.]+) adx_15m=([\d.]+) adx_3m=([\d.]+) atr_3m=([\d.]+) bbw_15m_pct=([\d.]+) \| (.+)$/
   )
   if (regimeConfirmed) {
     const verdictZh =
       regimeConfirmed[1] === 'oscillation' ? '震荡' : regimeConfirmed[1] === 'trend' ? '趋势' : regimeConfirmed[1]
-    return `[市场状态切换] 已确认 ${verdictZh} ${regimeConfirmed[2]} → ${regimeConfirmed[3]} | 1H ADX=${regimeConfirmed[4]} 15m ADX=${regimeConfirmed[5]} | ${regimeConfirmed[6]}`
+    return `[市场状态切换] 已确认 ${verdictZh} ${regimeConfirmed[2]} → ${regimeConfirmed[3]} | ${formatRegimeMetrics(
+      regimeConfirmed[4],
+      regimeConfirmed[5],
+      regimeConfirmed[6],
+      regimeConfirmed[7],
+      regimeConfirmed[8]
+    )} | ${regimeConfirmed[9]}`
+  }
+
+  const regimeConfirmedLegacy = s.match(
+    /^regime-switch: confirmed (\w+) symbol=(\S+) switched_to=(.+) adx_1h=([\d.]+) adx_15m=([\d.]+) \| (.+)$/
+  )
+  if (regimeConfirmedLegacy) {
+    const verdictZh =
+      regimeConfirmedLegacy[1] === 'oscillation' ? '震荡' : regimeConfirmedLegacy[1] === 'trend' ? '趋势' : regimeConfirmedLegacy[1]
+    return `[市场状态切换] 已确认 ${verdictZh} ${regimeConfirmedLegacy[2]} → ${regimeConfirmedLegacy[3]} | 1H ADX=${regimeConfirmedLegacy[4]} 15m ADX=${regimeConfirmedLegacy[5]} | ${regimeConfirmedLegacy[6]}`
   }
 
   const regimeFailed = s.match(/^regime-switch: failed (\w+) symbol=(\S+) target=(.+?) error=(.+)$/)

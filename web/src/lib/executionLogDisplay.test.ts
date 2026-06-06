@@ -30,9 +30,10 @@ describe('executionLogDisplay zh', () => {
 
   it('translates regime detection inconclusive', () => {
     const line =
-      'regime-detect: inconclusive symbol=ETHUSDT adx_1h=22.3 adx_15m=21.0 bbw_15m_pct=1.45 | 1H ADX=22.3 灰区(20-25)'
+      'regime-detect: inconclusive symbol=ETHUSDT adx_1h=22.3 adx_15m=21.0 adx_3m=18.1 atr_3m=12.3400 bbw_15m_pct=1.45 | 1H ADX=22.3 灰区(20-25)'
     expect(translateExecutionLogLine(line, zh)).toContain('[市场状态检测] 未决 ETHUSDT')
     expect(translateExecutionLogLine(line, zh)).toContain('1H ADX=22.3')
+    expect(translateExecutionLogLine(line, zh)).toContain('3m ADX=18.1')
   })
 
   it('translates regime switch pending', () => {

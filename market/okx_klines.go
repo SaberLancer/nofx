@@ -9,6 +9,7 @@ import (
 )
 
 const okxCandlesURL = "https://www.okx.com/api/v5/market/candles"
+const okxCandlesPageMax = 300
 
 // GetKlinesRecentOKX fetches the latest N swap candles from OKX public market API.
 // When simulated is true, requests demo-trading klines via x-simulated-trading: 1.
@@ -21,21 +22,60 @@ func GetKlinesRecentOKX(symbol string, timeframe string, limit int, simulated bo
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 {
-		limit = 200
-	}
-	if limit > 300 {
-		limit = 300
-	}
+	limit = NormalizeKlineFetchLimit(limit)
 
 	instID := okxInstID(symbol)
+	remaining := limit
+	var before int64
+	var out []Kline
+
+	for remaining > 0 {
+		page := remaining
+		if page > okxCandlesPageMax {
+			page = okxCandlesPageMax
+		}
+		batch, err := fetchOKXCandlesPage(instID, bar, page, simulated, before)
+		if err != nil {
+			return nil, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		if len(out) == 0 {
+			out = batch
+		} else {
+			out = append(batch, out...)
+		}
+		if len(batch) < page {
+			break
+		}
+		before = batch[0].OpenTime
+		remaining -= len(batch)
+	}
+
+	if len(out) == 0 {
+		return nil, fmt.Errorf("okx candles response is empty")
+	}
+	return TailKlines(out, limit), nil
+}
+
+func fetchOKXCandlesPage(instID, bar string, limit int, simulated bool, before int64) ([]Kline, error) {
+	if limit <= 0 {
+		limit = DefaultKlineFetchLimit
+	}
+	if limit > okxCandlesPageMax {
+		limit = okxCandlesPageMax
+	}
+
 	url := fmt.Sprintf("%s?instId=%s&bar=%s&limit=%d", okxCandlesURL, instID, bar, limit)
+	if before > 0 {
+		url += "&before=" + strconv.FormatInt(before, 10)
+	}
 
 	body, err := okxPublicGet(url, simulated, 15*time.Second)
 	if err != nil {
 		return nil, err
 	}
-
 	return parseOKXCandlesJSON(body)
 }
 

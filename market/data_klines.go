@@ -16,14 +16,36 @@ import (
 // Note: Kline data now uses free/open API (coinank_api.Kline) which doesn't require authentication
 
 const (
+	DefaultKlineFetchLimit  = 200
+	MaxKlineFetchLimit      = 1500
 	coinAnkKlineMaxAttempts = 3
 	coinAnkKlineRetryDelay  = 200 * time.Millisecond
 	// CoinAnkRequestSpacing is a short pause between consecutive timeframe requests for one symbol.
 	CoinAnkRequestSpacing = 120 * time.Millisecond
 )
 
+// NormalizeKlineFetchLimit clamps requested kline count for market data APIs.
+func NormalizeKlineFetchLimit(limit int) int {
+	if limit <= 0 {
+		return DefaultKlineFetchLimit
+	}
+	if limit > MaxKlineFetchLimit {
+		return MaxKlineFetchLimit
+	}
+	return limit
+}
+
+// TailKlines returns the last count bars (or all bars when count exceeds length).
+func TailKlines(klines []Kline, count int) []Kline {
+	if count <= 0 || len(klines) <= count {
+		return klines
+	}
+	return klines[len(klines)-count:]
+}
+
 // getKlinesFromCoinAnk fetches kline data from CoinAnk API (replacement for WSMonitorCli)
 func getKlinesFromCoinAnk(symbol, interval, exchange string, limit int, opts KlineOptions) ([]Kline, error) {
+	limit = NormalizeKlineFetchLimit(limit)
 	exchange = NormalizeKlineExchange(exchange)
 
 	if exchange == "okx" && !IsXyzDexAsset(symbol) {

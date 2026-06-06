@@ -59,8 +59,9 @@ func (at *AutoTrader) applyRegimeSwitchConfig(
 		if enabled {
 			l1h := normDetection.Layer1H
 			l15 := normDetection.Layer15m
-			at.logInfof("📐 多周期检测: 1H ADX灰区%.0f–%.0f | 15m确认=%v | 3m SL=%.1fxATR",
-				l1h.ADXRangingBelow, l1h.ADXTrendAbove, l15.Enabled, normDetection.Layer3m.ATRSLMultiplier)
+			l3m := normDetection.Layer3m
+			at.logInfof("📐 多周期检测: 1H ADX灰区%.0f–%.0f | 15m确认=%v | 3m扳机=%v SL=%.1fxATR",
+				l1h.ADXRangingBelow, l1h.ADXTrendAbove, l15.Enabled, l3m.Enabled, l3m.ATRSLMultiplier)
 		}
 	}
 	at.regimeSwitch.mu.Unlock()
@@ -145,8 +146,8 @@ func (at *AutoTrader) maybeSwitchStrategyByRegime() bool {
 	if !snap.Decisive {
 		at.logInfof("📊 市场状态未决，暂不切换 [%s] %s", symbol, snap.Reason)
 		at.storeRegimeExecutionLog([]string{
-			fmt.Sprintf("regime-detect: inconclusive symbol=%s adx_1h=%.1f adx_15m=%.1f bbw_15m_pct=%.2f | %s",
-				symbol, snap.ADX1H, snap.ADX15m, snap.BBW15mPct, snap.Reason),
+			fmt.Sprintf("regime-detect: inconclusive symbol=%s %s | %s",
+				symbol, regimeDetectMetrics(snap), snap.Reason),
 		})
 		return false
 	}
@@ -179,8 +180,8 @@ func (at *AutoTrader) maybeSwitchStrategyByRegime() bool {
 		at.regimeSwitch.active = detected
 		at.regimeSwitch.mu.Unlock()
 		at.storeRegimeExecutionLog([]string{
-			fmt.Sprintf("regime-detect: verdict=%s symbol=%s adx_1h=%.1f adx_15m=%.1f strategy=%s | %s",
-				verdictLabel, symbol, snap.ADX1H, snap.ADX15m, currentName, snap.Reason),
+			fmt.Sprintf("regime-detect: verdict=%s symbol=%s %s strategy=%s | %s",
+				verdictLabel, symbol, regimeDetectMetrics(snap), currentName, snap.Reason),
 		})
 		return false
 	}
@@ -196,11 +197,11 @@ func (at *AutoTrader) maybeSwitchStrategyByRegime() bool {
 	at.regimeSwitch.mu.Unlock()
 
 	if count < confirmCycles {
-		at.logInfof("📊 市场状态切换待确认: %s (%d/%d) [%s] 1H_ADX=%.1f 15m_ADX=%.1f %s",
-			label, count, confirmCycles, symbol, snap.ADX1H, snap.ADX15m, snap.Reason)
+		at.logInfof("📊 市场状态切换待确认: %s (%d/%d) [%s] 1H_ADX=%.1f 15m_ADX=%.1f 3m_ADX=%.1f %s",
+			label, count, confirmCycles, symbol, snap.ADX1H, snap.ADX15m, snap.ADX3m, snap.Reason)
 		at.storeRegimeExecutionLog([]string{
-			fmt.Sprintf("regime-switch: pending %s symbol=%s confirm=%d/%d target=%s adx_1h=%.1f adx_15m=%.1f | %s",
-				verdictLabel, symbol, count, confirmCycles, targetName, snap.ADX1H, snap.ADX15m, snap.Reason),
+			fmt.Sprintf("regime-switch: pending %s symbol=%s confirm=%d/%d target=%s %s | %s",
+				verdictLabel, symbol, count, confirmCycles, targetName, regimeDetectMetrics(snap), snap.Reason),
 		})
 		return false
 	}
@@ -220,42 +221,77 @@ func (at *AutoTrader) maybeSwitchStrategyByRegime() bool {
 	at.regimeSwitch.active = detected
 	at.regimeSwitch.mu.Unlock()
 
-	at.logInfof("🔀 市场状态确认为%s → 自动切换策略 [%s] (1H_ADX=%.1f, %s)", label, symbol, snap.ADX1H, snap.Reason)
+	at.logInfof("🔀 市场状态确认为%s → 自动切换策略 [%s] (1H_ADX=%.1f, 3m_ADX=%.1f, %s)", label, symbol, snap.ADX1H, snap.ADX3m, snap.Reason)
 	at.storeRegimeExecutionLog([]string{
-		fmt.Sprintf("regime-switch: confirmed %s symbol=%s switched_to=%s adx_1h=%.1f adx_15m=%.1f | %s",
-			verdictLabel, symbol, targetName, snap.ADX1H, snap.ADX15m, snap.Reason),
+		fmt.Sprintf("regime-switch: confirmed %s symbol=%s switched_to=%s %s | %s",
+			verdictLabel, symbol, targetName, regimeDetectMetrics(snap), snap.Reason),
 	})
 	return true
+}
+
+func regimeDetectMetrics(snap market.MultiTFRegimeSnapshot) string {
+	return fmt.Sprintf(
+		"adx_1h=%.1f adx_15m=%.1f adx_3m=%.1f atr_3m=%.4f bbw_15m_pct=%.2f",
+		snap.ADX1H, snap.ADX15m, snap.ADX3m, snap.ATR3m, snap.BBW15mPct,
+	)
 }
 
 func (at *AutoTrader) detectMultiTFRegimeSnapshot(symbol string, detection store.RegimeDetectionConfig) market.MultiTFRegimeSnapshot {
 	detection = detection.Normalize()
 	l1h := detection.Layer1H
 	l15 := detection.Layer15m
+	l3m := detection.Layer3m
 
 	klineExchange := market.NormalizeKlineExchange(at.exchange)
 	opts := at.klineOptions()
 
-	var klines1h, klines15m []market.Kline
+	var klines1h, klines15m, klines3m []market.Kline
 
+	timeframes := make([]string, 0, 3)
+	klineCount := 30
+	primaryTF := "15m"
 	if l1h.Enabled {
-		data, err := market.GetWithTimeframesOptions(symbol, []string{"1h"}, "1h", l1h.KlineCount, klineExchange, opts)
+		timeframes = append(timeframes, "1h")
+		if l1h.KlineCount > klineCount {
+			klineCount = l1h.KlineCount
+		}
+		primaryTF = "1h"
+	}
+	if l15.Enabled {
+		timeframes = append(timeframes, "15m")
+		if l15.KlineCount > klineCount {
+			klineCount = l15.KlineCount
+		}
+		if !l1h.Enabled {
+			primaryTF = "15m"
+		}
+	}
+	if l3m.Enabled {
+		timeframes = append(timeframes, "3m")
+		if l3m.KlineCount > klineCount {
+			klineCount = l3m.KlineCount
+		}
+		if !l1h.Enabled && !l15.Enabled {
+			primaryTF = "3m"
+		}
+	}
+
+	if len(timeframes) > 0 {
+		data, err := market.GetWithTimeframesOptions(symbol, timeframes, primaryTF, klineCount, klineExchange, opts)
 		if err == nil && data != nil && data.TimeframeData != nil {
 			if tf, ok := data.TimeframeData["1h"]; ok && tf != nil {
 				klines1h = market.KlinesFromBars(tf.Klines)
 			}
-		}
-	}
-	if l15.Enabled {
-		data, err := market.GetWithTimeframesOptions(symbol, []string{"15m"}, "15m", l15.KlineCount, klineExchange, opts)
-		if err == nil && data != nil && data.TimeframeData != nil {
 			if tf, ok := data.TimeframeData["15m"]; ok && tf != nil {
 				klines15m = market.KlinesFromBars(tf.Klines)
+			}
+			if tf, ok := data.TimeframeData["3m"]; ok && tf != nil {
+				klines3m = market.KlinesFromBars(tf.Klines)
 			}
 		}
 	}
 
-	return detectMultiTFRegime(klines1h, klines15m, detection)
+	return detectMultiTFRegime(klines1h, klines15m, klines3m, detection)
 }
 
 func (at *AutoTrader) regimeDetectionSymbolEarly() string {

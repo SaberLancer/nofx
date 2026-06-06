@@ -6,11 +6,12 @@ import (
 	"nofx/store"
 )
 
-// detectMultiTFRegime classifies market using 1H bias + optional 15m decision desk.
-func detectMultiTFRegime(klines1h, klines15m []market.Kline, cfg store.RegimeDetectionConfig) market.MultiTFRegimeSnapshot {
+// detectMultiTFRegime classifies market using 1H bias + 15m decision desk + optional 3m trigger.
+func detectMultiTFRegime(klines1h, klines15m, klines3m []market.Kline, cfg store.RegimeDetectionConfig) market.MultiTFRegimeSnapshot {
 	cfg = cfg.Normalize()
 	l1h := cfg.Layer1H
 	l15 := cfg.Layer15m
+	l3m := cfg.Layer3m
 
 	snap := market.MultiTFRegimeSnapshot{Verdict: market.RegimeVerdictInconclusive}
 
@@ -71,6 +72,8 @@ func detectMultiTFRegime(klines1h, klines15m []market.Kline, cfg store.RegimeDet
 		}
 	}
 
+	bias3m := classifyRegime3mBias(klines3m, l3m, l15, &snap)
+
 	switch {
 	case bias1h == market.RegimeVerdictRange:
 		snap.Verdict = market.RegimeVerdictRange
@@ -86,12 +89,106 @@ func detectMultiTFRegime(klines1h, klines15m []market.Kline, cfg store.RegimeDet
 		snap.Verdict = bias15m
 		snap.Decisive = l15.Enabled
 	default:
-		snap.Decisive = false
-		if snap.Reason == "" {
-			snap.Reason = "1H/15m 数据不足或未决"
+		if l3m.Enabled && bias3m != market.RegimeVerdictInconclusive {
+			snap.Verdict = bias3m
+			snap.Decisive = true
+			if snap.Reason != "" {
+				snap.Reason += " | "
+			}
+			snap.Reason += "1H/15m未决，参考3m扳机"
+		} else {
+			snap.Decisive = false
+			if snap.Reason == "" {
+				snap.Reason = "1H/15m/3m 数据不足或未决"
+			}
 		}
 	}
 
+	applyRegime3mTriggerFilter(&snap, l3m, bias3m)
+
 	snap.IsOscillating = snap.Verdict == market.RegimeVerdictRange
 	return snap
+}
+
+func classifyRegime3mBias(
+	klines3m []market.Kline,
+	l3m store.RegimeLayer3m,
+	l15 store.RegimeLayer15m,
+	snap *market.MultiTFRegimeSnapshot,
+) market.MultiTFRegimeVerdict {
+	if !l3m.Enabled || snap == nil {
+		return market.RegimeVerdictInconclusive
+	}
+
+	adxPeriod := l15.ADXPeriod
+	if adxPeriod <= 0 {
+		adxPeriod = 14
+	}
+	if len(klines3m) < adxPeriod*2 || len(klines3m) < l3m.ATRPeriod+1 {
+		return market.RegimeVerdictInconclusive
+	}
+
+	adx3m := market.CalculateADX(klines3m, adxPeriod)
+	atr3m := market.ExportCalculateATR(klines3m, l3m.ATRPeriod)
+	snap.ADX3m = adx3m.ADX
+	snap.ATR3m = atr3m
+
+	ema9 := market.ExportCalculateEMA(klines3m, 9)
+	lastClose := klines3m[len(klines3m)-1].Close
+	switch {
+	case lastClose > ema9*1.001:
+		snap.TriggerBias3m = "long"
+	case lastClose < ema9*0.999:
+		snap.TriggerBias3m = "short"
+	default:
+		snap.TriggerBias3m = "flat"
+	}
+
+	rangingBelow := l15.ADXRangingBelow
+	trendAbove := l15.ADXTrendAbove
+	if rangingBelow <= 0 {
+		rangingBelow = 20
+	}
+	if trendAbove <= 0 {
+		trendAbove = 25
+	}
+
+	reasonPart := fmt.Sprintf("3m ADX=%.1f ATR=%.4f", adx3m.ADX, atr3m)
+	if snap.Reason != "" {
+		snap.Reason += " | "
+	}
+	switch {
+	case adx3m.ADX > 0 && adx3m.ADX < rangingBelow:
+		snap.Reason += reasonPart + " 微震荡"
+		return market.RegimeVerdictRange
+	case adx3m.ADX >= trendAbove:
+		snap.Reason += fmt.Sprintf("%s 微趋势(%s)", reasonPart, snap.TriggerBias3m)
+		return market.RegimeVerdictTrend
+	default:
+		snap.Reason += reasonPart + " 扳机未决"
+		return market.RegimeVerdictInconclusive
+	}
+}
+
+func applyRegime3mTriggerFilter(
+	snap *market.MultiTFRegimeSnapshot,
+	l3m store.RegimeLayer3m,
+	bias3m market.MultiTFRegimeVerdict,
+) {
+	if !l3m.Enabled || snap == nil || !snap.Decisive {
+		return
+	}
+	if bias3m == market.RegimeVerdictInconclusive {
+		snap.Decisive = false
+		snap.Reason += " | 3m 扳机未决，暂不切"
+		return
+	}
+	wantRange := snap.Verdict == market.RegimeVerdictRange
+	gotRange := bias3m == market.RegimeVerdictRange
+	if wantRange != gotRange {
+		snap.Decisive = false
+		snap.Reason += " | 3m 与 1H/15m 判定冲突，暂不切"
+		return
+	}
+	snap.Reason += " | 3m扳机同向确认"
 }

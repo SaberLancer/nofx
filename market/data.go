@@ -198,16 +198,18 @@ func GetWithTimeframesOptions(symbol string, timeframes []string, primaryTimefra
 		var klines []Kline
 		var err error
 
+		fetchLimit := NormalizeKlineFetchLimit(count)
+
 		if isXyzAsset {
 			// Use Hyperliquid API for xyz dex assets
-			klines, err = getKlinesFromHyperliquid(symbol, tf, 200)
+			klines, err = getKlinesFromHyperliquid(symbol, tf, fetchLimit)
 			if err != nil {
 				logger.Infof("⚠️ Failed to get %s %s K-line from Hyperliquid: %v", symbol, tf, err)
 				continue
 			}
 		} else {
 			// Use CoinAnk for regular crypto assets (default to Binance)
-			klines, err = getKlinesFromCoinAnk(symbol, tf, exchange, 200, opts)
+			klines, err = getKlinesFromCoinAnk(symbol, tf, exchange, fetchLimit, opts)
 			if err != nil {
 				logger.Infof("⚠️ Failed to get %s %s K-line from CoinAnk: %v", symbol, tf, err)
 				continue
